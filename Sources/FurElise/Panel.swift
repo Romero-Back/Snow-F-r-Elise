@@ -13,6 +13,7 @@ struct PanelActions {
     var clearSnow: () -> Void
     var dockAction: () -> Void
     var setLaunchAtLogin: (Bool) -> Void
+    var checkForUpdates: () -> Void
     var quit: () -> Void
 }
 
@@ -55,13 +56,8 @@ struct PanelView: View {
                 .foregroundStyle(LinearGradient(colors: [.white, Color(red: 0.55, green: 0.75, blue: 1)],
                                                 startPoint: .top, endPoint: .bottom))
                 .shadow(color: .blue.opacity(0.4), radius: 4)
-            VStack(alignment: .leading, spacing: -4) {
-                Text("Für Elise")
-                    .font(.custom("SnellRoundhand-Bold", size: 30))
-                Text("снег на рабочем столе")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Text("Für Elise")
+                .font(.custom("SnellRoundhand-Bold", size: 30))
             Spacer()
             Toggle("", isOn: $s.enabled)
                 .toggleStyle(.switch)
@@ -116,7 +112,7 @@ struct PanelView: View {
             .frame(maxWidth: .infinity)
             .disabled(!s.accumulate)
             Text(s.accumulate ? "\(s.tool.hint). ⌥ + движение по снегу — снежок, три снежка — снеговик ☃︎"
-                              : "Сугробы выключены — смахивать нечего")
+                              : "Сугробы выключены — трогать нечего")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -176,10 +172,18 @@ struct PanelView: View {
                 case .none: EmptyView()
                 }
             }
-            Toggle("Запускать при входе", isOn: Binding(get: { state.launchAtLogin },
-                                                        set: { actions.setLaunchAtLogin($0) }))
-                .toggleStyle(.checkbox)
-                .font(.caption)
+            HStack {
+                Toggle("Запускать при входе", isOn: Binding(get: { state.launchAtLogin },
+                                                            set: { actions.setLaunchAtLogin($0) }))
+                    .toggleStyle(.checkbox)
+                    .font(.caption)
+                Spacer()
+                Button(action: actions.checkForUpdates) {
+                    Label("Обновления", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .controlSize(.small)
+                .help("Версия \(version). Проверить обновления")
+            }
             HStack {
                 Button(action: actions.clearSnow) { Label("Очистить снег", systemImage: "trash") }
                     .disabled(!s.enabled)
@@ -194,6 +198,10 @@ struct PanelView: View {
     }
 
     // MARK: - Вспомогательное
+
+    private var version: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+    }
 
     private var windTitle: String {
         switch s.wind {

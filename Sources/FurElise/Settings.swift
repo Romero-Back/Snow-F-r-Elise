@@ -23,10 +23,11 @@ enum Intensity: String, CaseIterable {
 }
 
 enum Tool: String, CaseIterable {
-    case mitten, shovel
+    case none, mitten, shovel
 
     var title: String {
         switch self {
+        case .none: return "Ничего"
         case .mitten: return "🧤 Варежка"
         case .shovel: return "🪏 Лопата"
         }
@@ -34,6 +35,7 @@ enum Tool: String, CaseIterable {
 
     var hint: String {
         switch self {
+        case .none: return "Курсор проходит мимо снега"
         case .mitten: return "Курсор смахивает снег"
         case .shovel: return "Касание убирает весь снег с окна"
         }

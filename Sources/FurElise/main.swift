@@ -3,6 +3,7 @@ import SpriteKit
 import ServiceManagement
 import SwiftUI
 import Combine
+import Sparkle
 
 /// SKView, которая рендерит в разрешении 1x даже на Retina: пикселей в 4 раза меньше.
 /// Снег мягкий, поэтому на вид разницы почти нет, а GPU и композитору заметно легче.
@@ -95,6 +96,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let panelState = PanelState()
     private var subs: Set<AnyCancellable> = []
     private var outsideClickMonitor: Any?
+    /// Sparkle: раз в день сам проверяет ленту обновлений из Info.plist (SUFeedURL).
+    private let updater = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil,
+                                                       userDriverDelegate: nil)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
@@ -179,6 +183,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             clearSnow: { [weak self] in self?.overlays.forEach { $0.scene.clearAll() } },
             dockAction: { [weak self] in self?.dockAction() },
             setLaunchAtLogin: { [weak self] on in self?.setLaunchAtLogin(on) },
+            checkForUpdates: { [weak self] in
+                self?.popover.performClose(nil)
+                NSApp.activate(ignoringOtherApps: true)
+                self?.updater.checkForUpdates(nil)
+            },
             quit: { NSApp.terminate(nil) })
         let host = NSHostingController(rootView: PanelView(state: panelState, actions: actions))
         host.sizingOptions = .preferredContentSize

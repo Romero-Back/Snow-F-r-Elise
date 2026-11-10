@@ -46,6 +46,8 @@
 
 Для локальной разработки один раз выполните `./scripts/setup-signing.sh` — он создаёт постоянный
 самоподписанный сертификат в `.signing/`, и доступ к Dock не слетает после каждой пересборки.
+Ключ подписи обновлений Sparkle тоже лежит в `.signing/` (`sparkle_private.key`, `sparkle_public.key`;
+публичный записан в `Resources/Info.plist` → `SUPublicEDKey`).
 
 ```sh
 ./build.sh          # → build/Für Elise.app, build/FurElise.zip, build/FurElise.dmg
@@ -54,13 +56,32 @@ open "build/Für Elise.app"
 
 Иконка генерируется скриптом `swift scripts/make-icon.swift` (результат уже лежит в `Resources/AppIcon.icns`).
 
+## Обновления
+
+Приложение обновляется само (через [Sparkle](https://sparkle-project.org)): раз в день проверяет
+ленту `appcast.xml` из последнего релиза и предлагает установить новую версию.
+Проверить вручную — кнопка «Обновления» в панели ❄︎.
+
 ## Релиз
 
 ```sh
-git tag v1.0.0 && git push origin v1.0.0
+git tag -a v1.2.0 -m "Что нового: строка — пункт списка"
+git push origin v1.2.0
 ```
 
-GitHub Actions соберёт приложение и прикрепит `FurElise.dmg` и `FurElise.zip` к релизу.
+GitHub Actions соберёт приложение, подпишет его и прикрепит к релизу `FurElise.dmg`, `FurElise.zip`
+и `appcast.xml` — после этого все установленные копии увидят обновление.
+Текст тега попадёт в описание релиза и в окно обновления.
+
+Секреты репозитория (Settings → Secrets and variables → Actions):
+
+| Секрет | Что это |
+|---|---|
+| `SIGNING_P12_BASE64` | `base64 -i .signing/cert.p12` — сертификат подписи (тот же, что локально) |
+| `SPARKLE_PRIVATE_KEY` | `.signing/sparkle_private.key` — ключ подписи обновлений |
+
+Без `SPARKLE_PRIVATE_KEY` обновления не выпустить: приложения отвергнут неподписанную ленту.
+Папку `.signing/` берегите и не публикуйте — в ней приватные ключи.
 
 ## Автоматизация
 

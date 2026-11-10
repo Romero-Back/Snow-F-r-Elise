@@ -34,5 +34,7 @@ security set-keychain-settings "$KC"            # без автоблокиро�
 security unlock-keychain -p $PASS "$KC"
 security import "$DIR/cert.p12" -k "$KC" -P $PASS -T /usr/bin/codesign >/dev/null
 security set-key-partition-list -S apple-tool:,apple: -s -k $PASS "$KC" >/dev/null
-rm -f "$DIR/key.pem" "$DIR/cert.p12" "$DIR/cert.cnf"
+# cert.p12 оставляем: его же нужно загрузить в секреты GitHub (см. README → «Релиз»),
+# чтобы релизные сборки были подписаны тем же сертификатом.
+rm -f "$DIR/key.pem" "$DIR/cert.cnf"
 echo "Готово: $NAME в $KC"

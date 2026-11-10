@@ -294,7 +294,8 @@ final class SnowScene: SKScene {
         let moved = dx * dx + dy * dy > 0.25
         let onScreen = CGRect(origin: .zero, size: size).insetBy(dx: -40, dy: -40).contains(m)
         let option = NSEvent.modifierFlags.contains(.option)
-        cursorNearSnow = onScreen && ledges.values.contains {
+        // С инструментом «Ничего» курсор снег не трогает — и 60 fps ради него не нужны.
+        cursorNearSnow = onScreen && (Settings.shared.tool != .none || option) && ledges.values.contains {
             m.x > $0.x0 - 30 && m.x < $0.maxX + 30 && m.y > $0.y - 30 && m.y < $0.y + $0.cap + 30
         }
 
@@ -325,6 +326,8 @@ final class SnowScene: SKScene {
         }
 
         switch Settings.shared.tool {
+        case .none:
+            break
         case .mitten:
             let a = sweep(from: last, to: m, radius: 12, dry: false).0
             if a > 0.3 { toss(area: a, at: m) }
