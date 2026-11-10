@@ -58,11 +58,26 @@ codesign --verify --deep --strict "$APP"
 echo "→ Архивы"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "build/$EXEC.zip"
 DMG_DIR=build/dmg
-mkdir -p "$DMG_DIR"
+mkdir -p "$DMG_DIR/.background"
 cp -R "$APP" "$DMG_DIR/"
 ln -s /Applications "$DMG_DIR/Applications"
-hdiutil create -volname "$NAME" -srcfolder "$DMG_DIR" -ov -format UDZO "build/$EXEC.dmg" >/dev/null
-rm -rf "$DMG_DIR"
+# Оформление окна установщика: фон и раскладка иконок (scripts/make-dmg-layout.sh).
+# Шаблон .DS_Store ссылается на том по имени — поэтому имя тома должно быть «$NAME».
+if [ -f Resources/dmg/DS_Store ]; then
+    cp Resources/dmg/background.tiff "$DMG_DIR/.background/background.tiff"
+    cp Resources/dmg/DS_Store "$DMG_DIR/.DS_Store"
+fi
+cp Resources/AppIcon.icns "$DMG_DIR/.VolumeIcon.icns"
+# Том с таким же именем уже подключён — отключаем, иначе hdiutil переименует новый.
+if [ -d "/Volumes/$NAME" ]; then hdiutil detach "/Volumes/$NAME" -quiet || true; fi
+# Сначала записываемый образ: флаг «своя иконка» ставится на подключённый том,
+# потом сжимаем в итоговый .dmg.
+hdiutil create -volname "$NAME" -srcfolder "$DMG_DIR" -ov -format UDRW build/rw.dmg >/dev/null
+DEV=$(hdiutil attach -readwrite -noverify -noautoopen -nobrowse build/rw.dmg | grep -E '^/dev/' | head -1 | awk '{print $1}')
+command -v SetFile >/dev/null && SetFile -a C "/Volumes/$NAME" || true
+hdiutil detach "$DEV" -quiet
+hdiutil convert build/rw.dmg -format UDZO -imagekey zlib-level=9 -ov -o "build/$EXEC.dmg" >/dev/null
+rm -rf "$DMG_DIR" build/rw.dmg
 
 echo "Готово:"
 ls -lh "build/$EXEC.zip" "build/$EXEC.dmg"
