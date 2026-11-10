@@ -89,6 +89,17 @@ enum IcicleSize: String, CaseIterable {
     }
 }
 
+enum FrostSize: String, CaseIterable {
+    case light, heavy
+
+    var title: String {
+        switch self {
+        case .light: return tr("По краям", "Edges")
+        case .heavy: return tr("Сильный", "Heavy")
+        }
+    }
+}
+
 /// Настройки в UserDefaults. ObservableObject — чтобы панель на SwiftUI обновлялась сама.
 final class Settings: ObservableObject {
     static let shared = Settings()
@@ -119,12 +130,20 @@ final class Settings: ObservableObject {
     /// Снег тает, когда Mac горячий или за окном плюс.
     @Published var melting: Bool { didSet { d.set(melting, forKey: "melting") } }
     @Published var musicOnSnowman: Bool { didSet { d.set(musicOnSnowman, forKey: "musicOnSnowman") } }
+    @Published var frost: Bool { didSet { d.set(frost, forKey: "frost") } }
+    @Published var frostSize: FrostSize { didSet { d.set(frostSize.rawValue, forKey: "frostSize") } }
+    @Published var birds: Bool { didSet { d.set(birds, forKey: "birds") } }
+    @Published var sounds: Bool { didSet { d.set(sounds, forKey: "sounds") } }
+    /// 0...1, общая громкость всех звуков и шкатулки.
+    @Published var soundVolume: Double { didSet { d.set(soundVolume, forKey: "soundVolume") } }
     /// «ru» или «en» — язык интерфейса (см. tr()).
     @Published var language: String { didSet { d.set(language, forKey: "language") } }
 
     /// Последняя загруженная погода (не сохраняется).
     @Published var weather: WeatherNow?
 
+    /// По умолчанию включены только снег, трактор и снеговики — украшения, звуки и прочее
+    /// пользователь включает сам, чтобы при первом запуске экран не был занят всем сразу.
     private init() {
         intensity = Intensity(rawValue: d.string(forKey: "intensity") ?? "") ?? .steady
         tool = Tool(rawValue: d.string(forKey: "tool") ?? "") ?? .mitten
@@ -139,11 +158,16 @@ final class Settings: ObservableObject {
         icicles = d.object(forKey: "icicles") as? Bool ?? false
         icicleWhere = IcicleWhere(rawValue: d.string(forKey: "icicleWhere") ?? "") ?? .menu
         icicleSize = IcicleSize(rawValue: d.string(forKey: "icicleSize") ?? "") ?? .small
-        santa = d.object(forKey: "santa") as? Bool ?? true
-        newYear = d.object(forKey: "newYear") as? Bool ?? true
+        santa = d.object(forKey: "santa") as? Bool ?? false
+        newYear = d.object(forKey: "newYear") as? Bool ?? false
         melting = d.object(forKey: "melting") as? Bool ?? false
-        musicOnSnowman = d.object(forKey: "musicOnSnowman") as? Bool ?? true
+        musicOnSnowman = d.object(forKey: "musicOnSnowman") as? Bool ?? false
         language = d.string(forKey: "language") ?? "ru"
+        frost = d.object(forKey: "frost") as? Bool ?? false
+        frostSize = FrostSize(rawValue: d.string(forKey: "frostSize") ?? "") ?? .light
+        birds = d.object(forKey: "birds") as? Bool ?? false
+        sounds = d.object(forKey: "sounds") as? Bool ?? false
+        soundVolume = d.object(forKey: "soundVolume") as? Double ?? 0.3
     }
 
     /// Погода выбранного города, если режим «как за окном» включён и она уже загружена.

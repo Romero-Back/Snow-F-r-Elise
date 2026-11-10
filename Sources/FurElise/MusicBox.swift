@@ -54,6 +54,7 @@ final class MusicBox {
         do { try engine.start() } catch { NSLog("Für Elise: звук не запустился: \(error)"); return }
         isPlaying = true
         lastStart = Date()
+        player.volume = min(1, Float(Settings.shared.soundVolume) * 1.2)
         player.scheduleBuffer(buffer, at: nil, options: []) { [weak self] in
             // Даём доиграть хвосту реверберации и выключаем движок — чтобы не держать аудио зря.
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {

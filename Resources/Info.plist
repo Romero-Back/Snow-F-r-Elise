@@ -7,8 +7,8 @@
     <key>CFBundleIdentifier</key><string>app.snowfall.FurElise</string>
     <key>CFBundleExecutable</key><string>FurElise</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.2.1</string>
-    <key>CFBundleVersion</key><string>1.2.1</string>
+    <key>CFBundleShortVersionString</key><string>1.3.0</string>
+    <key>CFBundleVersion</key><string>1.3.0</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>NSHumanReadableCopyright</key><string>Für Elise — снег на рабочем столе</string>

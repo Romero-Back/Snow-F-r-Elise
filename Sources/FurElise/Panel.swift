@@ -50,9 +50,12 @@ struct PanelView: View {
                 case .decor:
                     garlandCard
                     iciclesCard
+                    frostCard
+                    birdsCard
                     santaCard
                     newYearCard
                 case .more:
+                    soundCard
                     musicCard
                     meltCard
                     systemCard
@@ -189,8 +192,10 @@ struct PanelView: View {
             .frame(maxWidth: .infinity)
             .disabled(!s.accumulate)
             Text(s.accumulate
-                 ? s.tool.hint + tr(". ⌥ + движение по снегу — снежок, три снежка — снеговик ☃︎",
-                                    ". ⌥ + move through snow — a snowball; stack three — a snowman ☃︎")
+                 ? s.tool.hint + tr(". ⌥ + движение по снегу — снежок, три снежка — снеговик ☃︎. "
+                                    + "Отпустите ⌥ на быстром движении — снежок полетит в окно.",
+                                    ". ⌥ + move through snow — a snowball; stack three — a snowman ☃︎. "
+                                    + "Release ⌥ mid-flick to throw it at a window.")
                  : tr("Сугробы выключены — трогать нечего", "Piling is off — nothing to touch"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -268,6 +273,44 @@ struct PanelView: View {
         .card()
     }
 
+    private var frostCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                title(tr("Иней", "Frost"), "snowflake.circle")
+                Spacer()
+                Toggle("", isOn: $s.frost).toggleStyle(.switch).labelsHidden().controlSize(.small)
+            }
+            if s.frost {
+                Picker("", selection: $s.frostSize) {
+                    ForEach(FrostSize.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
+                Text(tr("Нарастает от краёв экрана, курсор его растапливает",
+                        "Grows in from the screen edges; the cursor melts it"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .card()
+    }
+
+    private var birdsCard: some View {
+        HStack {
+            Text("🐦").font(.system(size: 22))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tr("Снегири", "Bullfinches")).font(.subheadline.weight(.semibold))
+                Text(tr("Садятся на сугробы, пугаются курсора", "Perch on snowdrifts, flee from the cursor"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Toggle("", isOn: $s.birds).toggleStyle(.switch).labelsHidden().controlSize(.small)
+        }
+        .card()
+    }
+
     private var santaCard: some View {
         HStack {
             Text("🛷").font(.system(size: 22))
@@ -299,6 +342,28 @@ struct PanelView: View {
     }
 
     // MARK: - Вкладка «Ещё»
+
+    private var soundCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                title(tr("Звуки", "Sounds"), "speaker.wave.2.fill")
+                Spacer()
+                Toggle("", isOn: $s.sounds).toggleStyle(.switch).labelsHidden().controlSize(.small)
+            }
+            if s.sounds {
+                HStack(spacing: 8) {
+                    Image(systemName: "speaker.fill").foregroundStyle(.secondary).font(.caption)
+                    Slider(value: $s.soundVolume, in: 0...1)
+                    Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary).font(.caption)
+                }
+                Text(tr("Бубенцы, хруст снега, салют, снегири, сосульки, снежки",
+                        "Bells, crunching snow, fireworks, birds, icicles, snowballs"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .card()
+    }
 
     private var musicCard: some View {
         HStack {

@@ -161,7 +161,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         overlays = NSScreen.screens.map { Overlay(screen: $0) }
         for o in overlays {
             o.scene.onSnowman = {
-                if Settings.shared.musicOnSnowman { MusicBox.shared.play() }
+                let s = Settings.shared
+                if s.musicOnSnowman, s.sounds { MusicBox.shared.play() }
             }
         }
         pollWindows()

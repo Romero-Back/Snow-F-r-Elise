@@ -10,6 +10,7 @@ final class Sleigh {
     private var t: CGFloat = 0
     var trailAcc: CGFloat = 0
     var snowAcc: CGFloat = 0
+    var bellAcc: CGFloat = 1
     let speed: CGFloat = 170
     static let length: CGFloat = 240
 

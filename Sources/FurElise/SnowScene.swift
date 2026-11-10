@@ -27,6 +27,14 @@ final class SnowScene: SKScene {
     private let icicles = IcicleLayer()
     private let fireworks = Fireworks()
     private var sleigh: Sleigh?
+    private var birds: [Bird] = []
+    private var birdSpawnAt: TimeInterval = 8
+    private let birdLayer = SKNode()
+    private var splats: [Splat] = []
+    private let splatLayer = SKNode()
+    private var lastWins: [WinInfo] = []
+    private var frost: Frost?
+    private var cursorMovedNow = false
     private var meltAcc: CGFloat = 0
     private var countdownEnd: TimeInterval?
     private let countdownLabel = SKLabelNode(fontNamed: "AvenirNext-Heavy")
@@ -54,6 +62,13 @@ final class SnowScene: SKScene {
         flakeLayer.zPosition = 2
         tractorLayer.zPosition = 1.5
         garlandLayer.zPosition = 1.8
+        splatLayer.zPosition = 0.9
+        birdLayer.zPosition = 1.2
+        addChild(splatLayer)
+        addChild(birdLayer)
+        fireworks.onLaunch = { Sound.shared.play(.whoosh, gain: 0.6) }
+        fireworks.onBurst = { Sound.shared.play(.pop) }
+        icicles.onBreak = { Sound.shared.play(.tinkle) }
         icicles.node.zPosition = 1.7
         fireworks.node.zPosition = 0.5
         countdownLabel.zPosition = 3
@@ -89,6 +104,8 @@ final class SnowScene: SKScene {
         }
         for b in balls { removeBall(b, puff: true) }
         heldBall = nil
+        for sp in splats { sp.node.removeFromParent() }
+        splats = []
     }
 
     /// Вызвать трактор: выезжает из-за случайного края экрана и чистит низ экрана.
@@ -120,7 +137,9 @@ final class SnowScene: SKScene {
     }
 
     func updateWindows(_ wins: [WinInfo]) {
+        lastWins = wins
         syncIcicles(wins)
+        syncSplats(wins)
         var seen: Set<Int> = [-1]
         for (idx, w) in wins.enumerated() {
             let top = w.frame.maxY
@@ -171,6 +190,9 @@ final class SnowScene: SKScene {
         syncAccumulation()
         syncGarland(currentTime)
         stepDecorations(dt)
+        stepBirds(dt, currentTime)
+        stepSplats(dt)
+        stepFrost(dt)
         stepCountdown(currentTime)
         refreshLedges(currentTime)
         adaptFrameRate(currentTime)
@@ -181,7 +203,8 @@ final class SnowScene: SKScene {
     private func adaptFrameRate(_ t: TimeInterval) {
         let active = cursorNearSnow || heldBall != nil || tractor != nil || sleigh != nil
             || fireworks.isActive || countdownEnd != nil
-            || balls.contains { $0.state == .falling }
+            || balls.contains { $0.state == .falling || $0.state == .thrown }
+            || birds.contains { $0.state != .sitting }
             || particles.contains { $0.ballistic && $0.volume > 0 }
         if active { busyUntil = t + 0.8 }
         let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
@@ -340,6 +363,7 @@ final class SnowScene: SKScene {
         let onScreen = CGRect(origin: .zero, size: size).insetBy(dx: -40, dy: -40).contains(m)
         let option = NSEvent.modifierFlags.contains(.option)
         // С инструментом «Ничего» курсор снег не трогает — и 60 fps ради него не нужны.
+        cursorMovedNow = moved && onScreen
         cursorNearSnow = onScreen && (Settings.shared.tool != .none || option) && ledges.values.contains {
             m.x > $0.x0 - 30 && m.x < $0.maxX + 30 && m.y > $0.y - 30 && m.y < $0.y + $0.cap + 30
         }
@@ -353,7 +377,13 @@ final class SnowScene: SKScene {
                 ball.syncShape()
             } else {
                 heldBall = nil
-                ball.fall(vel: clamp(CGVector(dx: mouseVel.dx * 0.35, dy: mouseVel.dy * 0.35), 600))
+                // Отпустили ⌥ на быстром движении — бросок: снежок летит и бьётся о окно.
+                if hypot(mouseVel.dx, mouseVel.dy) > 700 {
+                    ball.throwIt(vel: clamp(CGVector(dx: mouseVel.dx * 0.9, dy: mouseVel.dy * 0.9), 1600))
+                    Sound.shared.play(.whoosh)
+                } else {
+                    ball.fall(vel: clamp(CGVector(dx: mouseVel.dx * 0.35, dy: mouseVel.dy * 0.35), 600))
+                }
             }
             return
         }
@@ -376,11 +406,15 @@ final class SnowScene: SKScene {
         case .mitten:
             let a = sweep(from: last, to: m, radius: 12, dry: false).0
             if a > 0.3 { toss(area: a, at: m) }
+            if a > 1.5 { Sound.shared.play(.crunch) }
             for b in balls where b.state == .resting && hypot(m.x - b.pos.x, m.y - b.pos.y) < b.r + 6 {
                 b.fall(vel: clamp(CGVector(dx: mouseVel.dx * 0.5, dy: max(60, mouseVel.dy * 0.3) + 60), 700))
             }
         case .shovel:
-            for l in sweep(from: last, to: m, radius: 18, dry: true).1 { clearLedge(l) }
+            for l in sweep(from: last, to: m, radius: 18, dry: true).1 {
+                clearLedge(l)
+                Sound.shared.play(.crunch, gain: 1.6)
+            }
             for b in balls where b.state != .gone && hypot(m.x - b.pos.x, m.y - b.pos.y) < b.r + 10 {
                 removeBall(b, puff: true)
             }
@@ -632,6 +666,11 @@ final class SnowScene: SKScene {
                             size: .random(in: 2.5...4.5), volume: 0, ballistic: false, life: .random(in: 0.6...1.1),
                             tint: NSColor(calibratedRed: 1, green: 0.85, blue: 0.35, alpha: 1))
             }
+            sl.bellAcc += dt
+            if sl.bellAcc > 0.9 {
+                sl.bellAcc = 0
+                Sound.shared.play(.bells)
+            }
             sl.snowAcc += dt
             if sl.snowAcc > 0.12 {
                 sl.snowAcc = 0
@@ -682,6 +721,189 @@ final class SnowScene: SKScene {
         ]))
     }
 
+    // MARK: - Иней
+
+    private func stepFrost(_ dt: CGFloat) {
+        let s = Settings.shared
+        guard s.frost else {
+            if let f = frost { f.node.removeFromParent(); frost = nil }
+            return
+        }
+        if frost == nil {
+            let f = Frost(size: size, topInset: menuBarInset, heavy: s.frostSize == .heavy)
+            f.node.zPosition = 2.6
+            addChild(f.node)
+            frost = f
+        }
+        frost?.setHeavy(s.frostSize == .heavy)
+        frost?.update(dt: dt, cursor: cursorMovedNow ? lastMouse : nil)
+    }
+
+    // MARK: - Снегири
+
+    private func stepBirds(_ dt: CGFloat, _ t: TimeInterval) {
+        let s = Settings.shared
+        if s.birds, accumulating, birds.count < 2, t > birdSpawnAt {
+            birdSpawnAt = t + .random(in: 15...40)
+            if let (l, c) = findPerch() {
+                let target = CGPoint(x: l.colX(c), y: l.y + l.h[c])
+                let fromLeft = Bool.random()
+                let start = CGPoint(x: fromLeft ? -30 : size.width + 30,
+                                    y: min(size.height - menuBarInset - 20, target.y + .random(in: 80...220)))
+                let b = Bird(pos: start, ledgeId: l.id, col: c)
+                b.face(fromLeft ? 1 : -1)
+                birdLayer.addChild(b.node)
+                birds.append(b)
+            }
+        }
+        for b in birds {
+            switch b.state {
+            case .flyingIn:
+                guard s.birds, let l = ledges[b.ledgeId], b.col < l.n, l.visible[b.col] else { scare(b, from: nil); break }
+                let target = CGPoint(x: l.colX(b.col), y: l.y + l.h[b.col])
+                let dx = target.x - b.pos.x, dy = target.y - b.pos.y
+                let d = hypot(dx, dy)
+                if d < 4 {
+                    b.pos = target
+                    b.state = .sitting
+                } else {
+                    let k = min(1, (180 + d * 0.6) * dt / d)
+                    b.pos.x += dx * k
+                    b.pos.y += dy * k + sin(b.t * 7) * 0.5
+                    b.face(dx)
+                }
+            case .sitting:
+                guard s.birds, let l = ledges[b.ledgeId], b.col < l.n, l.visible[b.col], l.h[b.col] > 0.3 else {
+                    scare(b, from: nil); break
+                }
+                b.pos.y = l.y + l.h[b.col]
+                if cursorMovedNow, let m = lastMouse, hypot(m.x - b.pos.x, m.y - b.pos.y) < 90 { scare(b, from: m); break }
+                if let tr = tractor, b.ledgeId == -1, abs(tr.x - b.pos.x) < 150 { scare(b, from: CGPoint(x: tr.x, y: 0)); break }
+                b.nextPeck -= dt
+                if b.nextPeck <= 0 { b.peck = 0.35; b.nextPeck = .random(in: 1.2...4) }
+                b.nextChirp -= dt
+                if b.nextChirp <= 0 { b.nextChirp = .random(in: 12...35); Sound.shared.play(.chirp, gain: 0.5) }
+            case .flyingAway:
+                b.vel.dy += 120 * dt
+                b.pos.x += b.vel.dx * dt
+                b.pos.y += b.vel.dy * dt
+            }
+            b.animate(dt)
+        }
+        birds.removeAll { b in
+            let gone = b.state == .flyingAway
+                && (b.pos.x < -60 || b.pos.x > size.width + 60 || b.pos.y > size.height + 40)
+            if gone { b.node.removeFromParent() }
+            return gone
+        }
+    }
+
+    private func scare(_ b: Bird, from p: CGPoint?) {
+        guard b.state != .flyingAway else { return }
+        b.state = .flyingAway
+        let dir: CGFloat = p.map { b.pos.x >= $0.x ? 1 : -1 } ?? (Bool.random() ? 1 : -1)
+        b.vel = CGVector(dx: dir * .random(in: 180...260), dy: .random(in: 120...200))
+        b.face(dir)
+        if p != nil { Sound.shared.play(.chirp) }
+    }
+
+    /// Место на сугробе, где снег не меньше 2 pt и рядом нет другого снегиря.
+    private func findPerch() -> (Ledge, Int)? {
+        var cands: [(Ledge, Int)] = []
+        for l in ledges.values where l.n > 8 {
+            let step = max(1, l.n / 12)
+            for c in stride(from: 3, to: l.n - 3, by: step) where l.visible[c] && l.h[c] > 2 {
+                let x = l.colX(c)
+                if !birds.contains(where: { $0.ledgeId == l.id && abs($0.pos.x - x) < 30 }) { cands.append((l, c)) }
+            }
+        }
+        return cands.randomElement()
+    }
+
+    // MARK: - Кляксы от снежков
+
+    private final class Splat {
+        let node: SKNode
+        let winId: Int
+        let winOrigin: CGPoint
+        var age: CGFloat = 0
+        init(node: SKNode, winId: Int, winOrigin: CGPoint) {
+            self.node = node; self.winId = winId; self.winOrigin = winOrigin
+        }
+    }
+
+    /// Самое переднее обычное окно в точке сцены.
+    private func windowAt(_ p: CGPoint) -> WinInfo? {
+        let g = CGPoint(x: p.x + screenFrame.minX, y: p.y + screenFrame.minY)
+        guard let w = lastWins.first(where: { $0.frame.contains(g) }), w.id >= 0 else { return nil }
+        return w
+    }
+
+    private func splat(on w: WinInfo, at p: CGPoint, r: CGFloat) {
+        let n = SKNode()
+        let k = 14
+        let pts: [CGPoint] = (0..<k).map { i in
+            let a = CGFloat(i) / CGFloat(k) * 2 * .pi
+            let rr = r * 1.15 * .random(in: 0.7...1.15)
+            return CGPoint(x: cos(a) * rr, y: sin(a) * rr)
+        }
+        func mid(_ a: CGPoint, _ b: CGPoint) -> CGPoint { CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2) }
+        let path = CGMutablePath()
+        path.move(to: mid(pts[k - 1], pts[0]))
+        for i in 0..<k { path.addQuadCurve(to: mid(pts[i], pts[(i + 1) % k]), control: pts[i]) }
+        path.closeSubpath()
+        let fill = NSColor(calibratedWhite: 0.97, alpha: 0.96)
+        let blob = SKShapeNode(path: path)
+        blob.fillColor = fill
+        blob.strokeColor = NSColor(calibratedRed: 0.7, green: 0.8, blue: 0.95, alpha: 0.8)
+        blob.lineWidth = 1
+        n.addChild(blob)
+        for _ in 0..<Int.random(in: 4...7) {
+            let a = CGFloat.random(in: 0...(2 * .pi)), d = r * .random(in: 1.3...1.9), dr = r * .random(in: 0.08...0.2)
+            let drop = SKShapeNode(circleOfRadius: dr)
+            drop.fillColor = fill
+            drop.strokeColor = .clear
+            drop.position = CGPoint(x: cos(a) * d, y: sin(a) * d)
+            n.addChild(drop)
+        }
+        n.position = p
+        splatLayer.addChild(n)
+        splats.append(Splat(node: n, winId: w.id, winOrigin: w.frame.origin))
+        if splats.count > 20 { splats.removeFirst().node.removeFromParent() }
+        for _ in 0..<min(30, Int(r * 1.5)) { puff(at: p, spread: r * 0.6) }
+        Sound.shared.play(.splat)
+    }
+
+    /// Окно сдвинули или закрыли — клякса отваливается; закрыто другим окном — прячется.
+    private func syncSplats(_ wins: [WinInfo]) {
+        splats.removeAll { sp in
+            guard let idx = wins.firstIndex(where: { $0.id == sp.winId }),
+                  abs(wins[idx].frame.minX - sp.winOrigin.x) < 0.5, abs(wins[idx].frame.minY - sp.winOrigin.y) < 0.5,
+                  sp.node.position.y + screenFrame.minY > wins[idx].frame.minY else {
+                for _ in 0..<12 { puff(at: sp.node.position, spread: 12) }
+                sp.node.removeFromParent()
+                return true
+            }
+            let g = CGPoint(x: sp.node.position.x + screenFrame.minX, y: sp.node.position.y + screenFrame.minY)
+            sp.node.isHidden = wins[..<idx].contains { $0.frame.contains(g) }
+            return false
+        }
+    }
+
+    /// Клякса понемногу сползает вниз, вытягивается и тает.
+    private func stepSplats(_ dt: CGFloat) {
+        splats.removeAll { sp in
+            sp.age += dt
+            if sp.age > 1.5 {
+                sp.node.position.y -= 4 * dt
+                sp.node.yScale = 1 + min(0.3, (sp.age - 1.5) * 0.02)
+            }
+            if sp.age > 18 { sp.node.alpha = max(0, 1 - (sp.age - 18) / 6) }
+            if sp.age > 24 { sp.node.removeFromParent(); return true }
+            return false
+        }
+    }
+
     // MARK: - Трактор
 
     private func stepTractor(_ dt: CGFloat, _ t: TimeInterval) {
@@ -713,6 +935,7 @@ final class SnowScene: SKScene {
 
         // Снег из-под отвала летит вверх и в сторону.
         if removed > 0.5 {
+            Sound.shared.play(.crunch, gain: 0.5)
             let count = min(8, Int(removed / 4) + 1)
             for _ in 0..<count {
                 addParticle(pos: CGPoint(x: tr.bladeFrontX, y: .random(in: 8...22)),
@@ -747,6 +970,20 @@ final class SnowScene: SKScene {
             switch b.state {
             case .held, .gone:
                 break
+            case .thrown:
+                b.flightTime += dt
+                b.vel.dy -= 500 * dt
+                b.pos.x += b.vel.dx * dt
+                b.pos.y += b.vel.dy * dt
+                b.node.position = b.pos
+                if b.pos.y < -b.r * 2 || b.pos.x < -200 || b.pos.x > size.width + 200 {
+                    removeBall(b, puff: false)
+                } else if b.flightTime > 0.12, let w = windowAt(b.pos) {
+                    splat(on: w, at: b.pos, r: b.r)
+                    removeBall(b, puff: false)
+                } else if b.flightTime > 1.6 {
+                    b.fall(vel: b.vel)
+                }
             case .resting:
                 if !supportValid(b) { b.fall() }
             case .falling:
@@ -771,6 +1008,10 @@ final class SnowScene: SKScene {
             let had = b.hasFace
             b.setFace(want)
             if want && !had { onSnowman?() }
+        }
+        // Средний шар снеговика — руки-веточки и пуговицы.
+        for b in balls {
+            b.setBody(b.state == .resting && balls.contains { $0.hasFace && $0.supportBall === b })
         }
     }
 
@@ -804,6 +1045,7 @@ final class SnowScene: SKScene {
         if let o = onBall {
             b.pos.x = o.pos.x + (b.pos.x - o.pos.x) * 0.3
             b.supportBall = o
+            b.node.zPosition = o.node.zPosition + 0.1   // верхний шар рисуется поверх нижнего
         } else if let l = onLedge {
             b.supportLedge = l.id
             b.supportY = l.y

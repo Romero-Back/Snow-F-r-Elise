@@ -37,6 +37,9 @@ final class Fireworks {
         NSColor(calibratedWhite: 1, alpha: 1),
     ]
 
+    var onLaunch: (() -> Void)?
+    var onBurst: (() -> Void)?
+
     var isActive: Bool { t < until || !sparks.isEmpty || !rockets.isEmpty }
 
     func start(duration: CGFloat) {
@@ -103,9 +106,11 @@ final class Fireworks {
         let burstY = size.height * .random(in: 0.45...0.8)
         let vy = sqrt(2 * 260 * burstY) * 1.05
         rockets.append(Rocket(s: s, vel: CGVector(dx: .random(in: -40...40), dy: vy), burstY: burstY, colors: colors))
+        onLaunch?()
     }
 
     private func explode(at p: CGPoint, colors: [NSColor]) {
+        onBurst?()
         let n = Int.random(in: 80...130)
         let base = CGFloat.random(in: 170...260)
         for _ in 0..<n {

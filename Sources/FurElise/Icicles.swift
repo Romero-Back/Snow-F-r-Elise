@@ -79,6 +79,8 @@ final class IcicleLayer {
     private var rails: [Int: Rail] = [:]
     private var falling: [Falling] = []
     private var builtSize: IcicleSize?
+    /// Сосульки отломились — для звука.
+    var onBreak: (() -> Void)?
 
     var isEmpty: Bool { rails.isEmpty && falling.isEmpty }
 
@@ -153,6 +155,7 @@ final class IcicleLayer {
 
     /// Край исчез или сдвинулся — сосульки отламываются и падают.
     private func breakOff(_ r: Rail) {
+        if r.icicles.contains(where: { !$0.node.isHidden }) { onBreak?() }
         for ic in r.icicles where !ic.node.isHidden && falling.count < 200 {
             ic.node.removeFromParent()
             ic.node.position = CGPoint(x: r.x0 + ic.x, y: r.y)
