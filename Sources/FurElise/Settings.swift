@@ -89,6 +89,30 @@ enum IcicleSize: String, CaseIterable {
     }
 }
 
+enum FlakeStyle: String, CaseIterable {
+    case dots, stars, crystals
+
+    var title: String {
+        switch self {
+        case .dots: return tr("• Точки", "• Dots")
+        case .stars: return tr("✦ Снежинки", "✦ Flakes")
+        case .crystals: return tr("❄︎ Кристаллы", "❄︎ Crystals")
+        }
+    }
+}
+
+enum AutoCleaner: String, CaseIterable {
+    case tractor, sedan, both
+
+    var title: String {
+        switch self {
+        case .tractor: return tr("🚜 Трактор", "🚜 Plow")
+        case .sedan: return tr("🚗 Пятёрка", "🚗 Sedan")
+        case .both: return tr("По очереди", "Take turns")
+        }
+    }
+}
+
 enum TreeCorner: String, CaseIterable {
     case left, right
 
@@ -161,7 +185,17 @@ final class Settings: ObservableObject {
     /// Снег тает, когда Mac горячий или за окном плюс.
     @Published var melting: Bool { didSet { d.set(melting, forKey: "melting") } }
     @Published var musicOnSnowman: Bool { didSet { d.set(musicOnSnowman, forKey: "musicOnSnowman") } }
+    /// Кто сам выезжает чистить сугробы.
+    @Published var autoCleaner: AutoCleaner { didSet { d.set(autoCleaner.rawValue, forKey: "autoCleaner") } }
+    @Published var flakeStyle: FlakeStyle { didSet { d.set(flakeStyle.rawValue, forKey: "flakeStyle") } }
+    /// Гирлянда в два ряда: крупные лампочки сверху, мелкие снизу.
+    @Published var garlandDouble: Bool { didSet { d.set(garlandDouble, forKey: "garlandDouble") } }
+    @Published var fireplace: Bool { didSet { d.set(fireplace, forKey: "fireplace") } }
+    @Published var fireplaceCorner: TreeCorner { didSet { d.set(fireplaceCorner.rawValue, forKey: "fireplaceCorner") } }
+    @Published var fireplaceOnDock: Bool { didSet { d.set(fireplaceOnDock, forKey: "fireplaceOnDock") } }
     @Published var tree: Bool { didSet { d.set(tree, forKey: "tree") } }
+    /// Ставить ёлку на Dock, если он виден (нужен доступ «Универсальный доступ»).
+    @Published var treeOnDock: Bool { didSet { d.set(treeOnDock, forKey: "treeOnDock") } }
     @Published var treeCorner: TreeCorner { didSet { d.set(treeCorner.rawValue, forKey: "treeCorner") } }
     @Published var treeSize: TreeSize { didSet { d.set(treeSize.rawValue, forKey: "treeSize") } }
     @Published var treeLights: GarlandStyle { didSet { d.set(treeLights.rawValue, forKey: "treeLights") } }
@@ -199,7 +233,14 @@ final class Settings: ObservableObject {
         melting = d.object(forKey: "melting") as? Bool ?? false
         musicOnSnowman = d.object(forKey: "musicOnSnowman") as? Bool ?? false
         language = d.string(forKey: "language") ?? "ru"
+        autoCleaner = AutoCleaner(rawValue: d.string(forKey: "autoCleaner") ?? "") ?? .tractor
+        flakeStyle = FlakeStyle(rawValue: d.string(forKey: "flakeStyle") ?? "") ?? .dots
+        garlandDouble = d.object(forKey: "garlandDouble") as? Bool ?? false
+        fireplace = d.object(forKey: "fireplace") as? Bool ?? false
+        fireplaceCorner = TreeCorner(rawValue: d.string(forKey: "fireplaceCorner") ?? "") ?? .left
+        fireplaceOnDock = d.object(forKey: "fireplaceOnDock") as? Bool ?? true
         tree = d.object(forKey: "tree") as? Bool ?? false
+        treeOnDock = d.object(forKey: "treeOnDock") as? Bool ?? true
         treeCorner = TreeCorner(rawValue: d.string(forKey: "treeCorner") ?? "") ?? .right
         treeSize = TreeSize(rawValue: d.string(forKey: "treeSize") ?? "") ?? .medium
         treeLights = GarlandStyle(rawValue: d.string(forKey: "treeLights") ?? "") ?? .multicolor

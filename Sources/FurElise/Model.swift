@@ -123,6 +123,8 @@ final class Particle {
     let ballistic: Bool
     var life: CGFloat
     var phase = CGFloat.random(in: 0...1)
+    /// Вращение снежинки, рад/с (у точек — 0).
+    var spin: CGFloat = 0
     let freq = CGFloat.random(in: 0.25...0.8)
 
     init(node: SKSpriteNode, pos: CGPoint, vel: CGVector, size: CGFloat, volume: CGFloat, ballistic: Bool, life: CGFloat) {

@@ -22,8 +22,18 @@ final class Garland {
     private static let warm = NSColor(calibratedRed: 1.0, green: 0.80, blue: 0.48, alpha: 1)
     static let glowTexture = makeGlowTexture()
 
-    init(width: CGFloat, topY: CGFloat, style: GarlandStyle) {
-        let span: CGFloat = 120, sag: CGFloat = 16, perSpan = 4
+    /// double — два ряда: крупные лампочки сверху, ряд мелких пониже, со своим провисом.
+    init(width: CGFloat, topY: CGFloat, style: GarlandStyle, double: Bool = false) {
+        if double {
+            addRow(width: width, topY: topY, span: 130, sag: 14, perSpan: 4, scale: 1.35, style: style, colorShift: 0)
+            addRow(width: width, topY: topY - 6, span: 95, sag: 30, perSpan: 6, scale: 0.7, style: style, colorShift: 2)
+        } else {
+            addRow(width: width, topY: topY, span: 120, sag: 16, perSpan: 4, scale: 1, style: style, colorShift: 0)
+        }
+    }
+
+    private func addRow(width: CGFloat, topY: CGFloat, span: CGFloat, sag: CGFloat, perSpan: Int,
+                        scale: CGFloat, style: GarlandStyle, colorShift: Int) {
         let spans = max(1, Int((width / span).rounded()))
         let w = width / CGFloat(spans)
 
@@ -44,38 +54,40 @@ final class Garland {
         }
         let wireNode = SKShapeNode(path: wire)
         wireNode.strokeColor = NSColor(calibratedRed: 0.10, green: 0.22, blue: 0.12, alpha: 1)
-        wireNode.lineWidth = 1.6
+        wireNode.lineWidth = 1.6 * min(1, scale)
         wireNode.zPosition = 0
         node.addChild(wireNode)
 
+        let drop = 9 * scale
         for (i, p) in points.enumerated() {
-            let color = style == .warm ? Garland.warm : Garland.palette[i % Garland.palette.count]
+            let color = style == .warm ? Garland.warm : Garland.palette[(i + colorShift) % Garland.palette.count]
 
-            let glow = SKSpriteNode(texture: Garland.glowTexture, size: CGSize(width: 30, height: 30))
+            let glow = SKSpriteNode(texture: Garland.glowTexture, size: CGSize(width: 30 * scale, height: 30 * scale))
             glow.color = color
             glow.colorBlendFactor = 1
             glow.blendMode = .add
-            glow.position = CGPoint(x: p.x, y: p.y - 9)
+            glow.position = CGPoint(x: p.x, y: p.y - drop)
             glow.zPosition = 0.5
             node.addChild(glow)
 
-            let cap = SKShapeNode(rect: CGRect(x: -2.2, y: -4, width: 4.4, height: 4.5), cornerRadius: 1)
+            let cap = SKShapeNode(rect: CGRect(x: -2.2 * scale, y: -4 * scale, width: 4.4 * scale, height: 4.5 * scale),
+                                  cornerRadius: 1)
             cap.fillColor = NSColor(calibratedRed: 0.12, green: 0.18, blue: 0.12, alpha: 1)
             cap.strokeColor = .clear
             cap.position = p
             cap.zPosition = 1
             node.addChild(cap)
 
-            let bulb = SKShapeNode(ellipseOf: CGSize(width: 6, height: 10))
+            let bulb = SKShapeNode(ellipseOf: CGSize(width: 6 * scale, height: 10 * scale))
             bulb.fillColor = color
             bulb.strokeColor = .clear
-            bulb.position = CGPoint(x: p.x, y: p.y - 9)
+            bulb.position = CGPoint(x: p.x, y: p.y - drop)
             bulb.zPosition = 1.1
             // Блик на стекле.
-            let shine = SKShapeNode(ellipseOf: CGSize(width: 1.6, height: 3.4))
+            let shine = SKShapeNode(ellipseOf: CGSize(width: 1.6 * scale, height: 3.4 * scale))
             shine.fillColor = NSColor(calibratedWhite: 1, alpha: 0.75)
             shine.strokeColor = .clear
-            shine.position = CGPoint(x: -1.2, y: 1.5)
+            shine.position = CGPoint(x: -1.2 * scale, y: 1.5 * scale)
             shine.zPosition = 0.01
             bulb.addChild(shine)
             node.addChild(bulb)

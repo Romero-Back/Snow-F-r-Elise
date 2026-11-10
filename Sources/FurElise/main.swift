@@ -117,6 +117,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         dnc.addObserver(self, selector: #selector(automationFireworks), name: .init("app.snowfall.FurElise.fireworks"), object: nil)
         dnc.addObserver(self, selector: #selector(automationSanta), name: .init("app.snowfall.FurElise.santa"), object: nil)
         dnc.addObserver(self, selector: #selector(automationMusic), name: .init("app.snowfall.FurElise.music"), object: nil)
+        dnc.addObserver(self, selector: #selector(automationSedan), name: .init("app.snowfall.FurElise.sedan"), object: nil)
+        dnc.addObserver(self, selector: #selector(automationDrift), name: .init("app.snowfall.FurElise.drift"), object: nil)
         WeatherService.shared.start()
         clock = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.everySecond() }
         if Settings.shared.enabled { start() }
@@ -229,6 +231,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 self?.popover.performClose(nil)
                 self?.overlays.filter { !$0.away }.first?.scene.launchSleigh()
             },
+            sedan: { [weak self] in self?.overlays.filter { !$0.away }.first?.scene.callSedan(drift: false) },
+            drift: { [weak self] in
+                self?.popover.performClose(nil)
+                self?.overlays.filter { !$0.away }.first?.scene.callSedan(drift: true)
+            },
             quit: { NSApp.terminate(nil) })
         let host = NSHostingController(rootView: PanelView(state: panelState, actions: actions))
         host.sizingOptions = .preferredContentSize
@@ -304,6 +311,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     @objc private func automationFireworks() { overlays.forEach { $0.scene.launchFireworks(seconds: 15) } }
     @objc private func automationSanta() { overlays.filter { !$0.away }.first?.scene.launchSleigh() }
     @objc private func automationMusic() { MusicBox.shared.play() }
+    @objc private func automationSedan() { overlays.filter { !$0.away }.first?.scene.callSedan(drift: false) }
+    @objc private func automationDrift() { overlays.filter { !$0.away }.first?.scene.callSedan(drift: true) }
 
     @objc private func callTractor() { overlays.forEach { $0.scene.callTractor() } }
 

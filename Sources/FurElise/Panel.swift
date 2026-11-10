@@ -19,6 +19,8 @@ struct PanelActions {
     var playMusic: () -> Void
     var fireworks: () -> Void
     var santa: () -> Void
+    var sedan: () -> Void
+    var drift: () -> Void
     var quit: () -> Void
 }
 
@@ -50,6 +52,7 @@ struct PanelView: View {
                 case .decor:
                     garlandCard
                     treeCard
+                    fireplaceCard
                     iciclesCard
                     frostCard
                     extrasCard
@@ -151,6 +154,14 @@ struct PanelView: View {
                 weatherInfo
             }
 
+            Picker("", selection: $s.flakeStyle) {
+                ForEach(FlakeStyle.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(maxWidth: .infinity)
+            .help(tr("Вид снежинок", "Snowflake look"))
+
             HStack {
                 Toggle(tr("Копить сугробы", "Pile up"), isOn: $s.accumulate)
                 Spacer()
@@ -203,19 +214,34 @@ struct PanelView: View {
         .card()
     }
 
+    /// Уборка снега: кто выезжает сам и кнопки «вызвать».
     private var tractorCard: some View {
-        HStack {
-            Text("🚜").font(.system(size: 22))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(tr("Трактор", "Snowplow")).font(.subheadline.weight(.semibold))
-                Toggle(tr("Сам чистит сугробы", "Clears drifts by itself"), isOn: $s.autoTractor)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                title(tr("Уборка снега", "Snow clearing"), "car.side")
+                Spacer()
+                Toggle(tr("Сама", "Auto"), isOn: $s.autoTractor)
                     .toggleStyle(.checkbox)
                     .font(.caption)
+                    .help(tr("Выезжает сама, когда внизу наметёт сугроб", "Comes out by itself when a drift piles up"))
             }
-            Spacer()
-            Button(tr("Вызвать", "Call"), action: actions.callTractor)
-                .buttonStyle(.borderedProminent)
-                .tint(.orange)
+            if s.autoTractor {
+                Picker("", selection: $s.autoCleaner) {
+                    ForEach(AutoCleaner.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
+            }
+            HStack(spacing: 6) {
+                Button(tr("🚜 Трактор", "🚜 Plow"), action: actions.callTractor)
+                Button(tr("🚗 Пятёрка", "🚗 Sedan"), action: actions.sedan)
+                Button(tr("💨 Дрифт", "💨 Drift"), action: actions.drift)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.black)
+            }
+            .controlSize(.small)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .card()
     }
@@ -232,6 +258,13 @@ struct PanelView: View {
             .labelsHidden()
             .frame(maxWidth: .infinity)
             if s.garland != .off {
+                Picker("", selection: $s.garlandDouble) {
+                    Text(tr("Один ряд", "One row")).tag(false)
+                    Text(tr("Два ряда", "Two rows")).tag(true)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
                 Picker("", selection: $s.garlandMode) {
                     ForEach(GarlandMode.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
@@ -328,9 +361,39 @@ struct PanelView: View {
                     .labelsHidden()
                     .frame(maxWidth: .infinity)
                 }
-                Toggle(tr("Подарки под ёлкой", "Gifts under the tree"), isOn: $s.treeGifts)
-                    .toggleStyle(.checkbox)
-                    .font(.caption)
+                HStack {
+                    Toggle(tr("Подарки", "Gifts"), isOn: $s.treeGifts)
+                    Spacer()
+                    Toggle(tr("Ставить на Dock", "Stand on the Dock"), isOn: $s.treeOnDock)
+                        .help(tr("Если Dock виден — ёлка встанет на его край", "If the Dock is visible, the tree stands on its edge"))
+                }
+                .toggleStyle(.checkbox)
+                .font(.caption)
+            }
+        }
+        .card()
+    }
+
+    private var fireplaceCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("🔥").font(.system(size: 15))
+                Text(tr("Камин", "Fireplace")).font(.subheadline.weight(.semibold))
+                Spacer()
+                Toggle("", isOn: $s.fireplace).toggleStyle(.switch).labelsHidden().controlSize(.small)
+            }
+            if s.fireplace {
+                HStack {
+                    Picker("", selection: $s.fireplaceCorner) {
+                        ForEach(TreeCorner.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity)
+                    Toggle(tr("На Dock", "On Dock"), isOn: $s.fireplaceOnDock)
+                        .toggleStyle(.checkbox)
+                        .font(.caption)
+                }
             }
         }
         .card()

@@ -15,10 +15,15 @@ final class SnowScene: SKScene {
     private var tractor: Tractor?
     private var garland: Garland?
     private var garlandBuilt: GarlandStyle = .off
+    private var garlandBuiltDouble = false
     private var accumulating = true
     private var autoTractorCheckAt: TimeInterval = 0
 
     private let flakeTexture = SnowScene.makeFlakeTexture()
+    private static let starTexture = SnowScene.makeStarTexture()
+    private static let crystalTextures = (0..<3).map { SnowScene.makeCrystalTexture(seed: $0) }
+    private var fireplace: Fireplace?
+    private let cursorBadge = CursorBadge()
     private let ledgeLayer = SKNode()
     private let ballLayer = SKNode()
     private let flakeLayer = SKNode()
@@ -35,6 +40,9 @@ final class SnowScene: SKScene {
     private var lastWins: [WinInfo] = []
     private var frost: Frost?
     private var tree: ChristmasTree?
+    private var sedan: Sedan?
+    /// Рамка Dock в координатах сцены (до его верхнего края), если он на этом экране.
+    private var dockLocal: CGRect?
     private var treeBuilt = ""
     private var treeShakeCooldown: CGFloat = 0
     private var cursorMovedNow = false
@@ -68,6 +76,7 @@ final class SnowScene: SKScene {
         splatLayer.zPosition = 0.9
         birdLayer.zPosition = 1.2
         addChild(splatLayer)
+        addChild(cursorBadge.node)
         addChild(birdLayer)
         fireworks.onLaunch = { Sound.shared.play(.whoosh, gain: 0.6) }
         fireworks.onBurst = { Sound.shared.play(.pop) }
@@ -141,6 +150,10 @@ final class SnowScene: SKScene {
 
     func updateWindows(_ wins: [WinInfo]) {
         lastWins = wins
+        dockLocal = wins.first { $0.id == -2 && $0.frame.intersects(screenFrame) }.map {
+            CGRect(x: $0.frame.minX - screenFrame.minX, y: $0.frame.minY - screenFrame.minY,
+                   width: $0.frame.width, height: $0.frame.height)
+        }
         syncIcicles(wins)
         syncSplats(wins)
         var seen: Set<Int> = [-1]
@@ -190,6 +203,7 @@ final class SnowScene: SKScene {
         stepParticles(dt)
         stepBalls(dt)
         stepTractor(dt, currentTime)
+        stepSedan(dt)
         syncAccumulation()
         syncGarland(currentTime)
         stepDecorations(dt)
@@ -197,6 +211,10 @@ final class SnowScene: SKScene {
         stepSplats(dt)
         stepFrost(dt)
         stepTree(dt)
+        stepFireplace(dt)
+        cursorBadge.update(dt: dt, tool: Settings.shared.tool, cursor: lastMouse,
+                           show: Settings.shared.accumulate && cursorNearSnow && heldBall == nil,
+                           speed: hypot(mouseVel.dx, mouseVel.dy))
         stepCountdown(currentTime)
         refreshLedges(currentTime)
         adaptFrameRate(currentTime)
@@ -205,7 +223,7 @@ final class SnowScene: SKScene {
     /// Пока снег просто падает, хватает 30 fps (полноэкранный прозрачный слой дорого композитить).
     /// Когда снег трогают, катают снежки или он осыпается, — 60 fps для плавности.
     private func adaptFrameRate(_ t: TimeInterval) {
-        let active = cursorNearSnow || heldBall != nil || tractor != nil || sleigh != nil
+        let active = cursorNearSnow || heldBall != nil || tractor != nil || sedan != nil || sleigh != nil
             || fireworks.isActive || countdownEnd != nil
             || balls.contains { $0.state == .falling || $0.state == .thrown }
             || birds.contains { $0.state != .sitting }
@@ -244,7 +262,20 @@ final class SnowScene: SKScene {
     private func spawnFlake(at p: CGPoint) {
         let sz = 1.6 + pow(CGFloat.random(in: 0...1), 2) * 3.8
         let speed = (22 + sz * 11) * (Settings.shared.effectiveIntensity == .blizzard ? 1.5 : 1)
-        addParticle(pos: p, vel: CGVector(dx: 0, dy: -speed), size: sz, volume: sz * sz * 0.22, ballistic: false)
+        guard let f = addParticle(pos: p, vel: CGVector(dx: 0, dy: -speed), size: sz, volume: sz * sz * 0.22,
+                                  ballistic: false) else { return }
+        switch Settings.shared.flakeStyle {
+        case .dots:
+            break
+        case .stars:
+            f.node.texture = SnowScene.starTexture
+            f.node.size = CGSize(width: sz * 3.4, height: sz * 3.4)
+            f.spin = .random(in: -1.2...1.2)
+        case .crystals:
+            f.node.texture = SnowScene.crystalTextures.randomElement()!
+            f.node.size = CGSize(width: sz * 5.2, height: sz * 5.2)
+            f.spin = .random(in: -0.8...0.8)
+        }
     }
 
     @discardableResult
@@ -252,6 +283,8 @@ final class SnowScene: SKScene {
                              ballistic: Bool, life: CGFloat = -1, tint: NSColor? = nil) -> Particle? {
         guard particles.count < maxParticles else { return nil }
         let node = pool.popLast() ?? SKSpriteNode(texture: flakeTexture)
+        node.texture = flakeTexture
+        node.zRotation = 0
         if let tint {
             node.color = tint
             node.colorBlendFactor = 1
@@ -283,6 +316,7 @@ final class SnowScene: SKScene {
             }
             p.pos.x += p.vel.dx * dt
             p.pos.y += p.vel.dy * dt
+            if p.spin != 0 { p.node.zRotation += p.spin * dt }
 
             var dead = false
             if p.life >= 0 {
@@ -566,15 +600,17 @@ final class SnowScene: SKScene {
 
     private func syncGarland(_ t: TimeInterval) {
         let style = Settings.shared.garland
-        if style != garlandBuilt {
+        let double = Settings.shared.garlandDouble
+        if style != garlandBuilt || double != garlandBuiltDouble {
             garland?.node.removeFromParent()
             garland = nil
             if style != .off {
-                let g = Garland(width: size.width, topY: size.height - menuBarInset, style: style)
+                let g = Garland(width: size.width, topY: size.height - menuBarInset, style: style, double: double)
                 garlandLayer.addChild(g.node)
                 garland = g
             }
             garlandBuilt = style
+            garlandBuiltDouble = double
         }
         garland?.update(t: CGFloat(t), mode: Settings.shared.garlandMode)
     }
@@ -725,6 +761,71 @@ final class SnowScene: SKScene {
         ]))
     }
 
+    // MARK: - Камин
+
+    private func stepFireplace(_ dt: CGFloat) {
+        let s = Settings.shared
+        guard s.fireplace else {
+            if let f = fireplace { f.node.removeFromParent(); fireplace = nil }
+            return
+        }
+        if fireplace == nil {
+            let f = Fireplace()
+            f.node.zPosition = 0.93
+            addChild(f.node)
+            fireplace = f
+        }
+        guard let f = fireplace else { return }
+
+        // Место: на Dock у выбранного конца или в углу экрана. Если там уже ёлка — встаём рядом.
+        let onDock: CGRect? = {
+            guard s.fireplaceOnDock, let d = dockLocal, d.width > Fireplace.width + 20 else { return nil }
+            return d
+        }()
+        let left = s.fireplaceCorner == .left
+        var shift: CGFloat = 0
+        if let t = tree, s.treeCorner == s.fireplaceCorner,
+           (s.treeOnDock && dockLocal != nil) == (onDock != nil) {
+            shift = t.halfWidth * 2 + 12
+        }
+        let x: CGFloat, y: CGFloat
+        if let d = onDock {
+            x = left ? d.minX + f.halfWidth + 8 + shift : d.maxX - f.halfWidth - 8 - shift
+            y = d.maxY + 1
+        } else {
+            x = left ? 24 + f.halfWidth + shift : size.width - 24 - f.halfWidth - shift
+            y = 2
+        }
+        f.node.position = CGPoint(x: x, y: y)
+        f.update(dt: dt)
+
+        // Искры из топки.
+        f.sparkAcc += dt
+        if f.sparkAcc > 0.09 {
+            f.sparkAcc = 0
+            addParticle(pos: CGPoint(x: x + .random(in: -14...14), y: y + f.fireCenter.y + .random(in: 0...10)),
+                        vel: CGVector(dx: .random(in: -12...12), dy: .random(in: 40...90)),
+                        size: .random(in: 1.5...3), volume: 0, ballistic: false, life: .random(in: 0.5...1.0),
+                        tint: NSColor(calibratedRed: 1, green: .random(in: 0.45...0.8), blue: 0.15, alpha: 1))
+        }
+        // Треск дров.
+        f.crackleAcc += dt
+        if f.crackleAcc > 2.5 {
+            f.crackleAcc = .random(in: 0...1.5)
+            Sound.shared.play(.crackle)
+        }
+        // У камина на полу тепло — снег тает.
+        if onDock == nil, let g = ledges[-1] {
+            let c0 = max(0, Int((x - f.halfWidth - 30 - g.x0) / colW))
+            let c1 = min(g.n - 1, Int((x + f.halfWidth + 30 - g.x0) / colW))
+            if c0 <= c1 {
+                var any = false
+                for c in c0...c1 where g.h[c] > 0 { g.h[c] = max(0, g.h[c] - 3 * dt); any = true }
+                if any { g.dirty = true }
+            }
+        }
+    }
+
     // MARK: - Ёлка
 
     private func stepTree(_ dt: CGFloat) {
@@ -735,9 +836,6 @@ final class SnowScene: SKScene {
             tree = nil
             if s.tree {
                 let t = ChristmasTree(height: s.treeSize.height, lights: s.treeLights, gifts: s.treeGifts)
-                let margin: CGFloat = 24
-                let x = s.treeCorner == .left ? margin + t.halfWidth : size.width - margin - t.halfWidth
-                t.node.position = CGPoint(x: x, y: 2)
                 t.node.zPosition = 0.95
                 addChild(t.node)
                 tree = t
@@ -745,6 +843,15 @@ final class SnowScene: SKScene {
             treeBuilt = key
         }
         guard let t = tree else { return }
+        // На Dock — у выбранного конца, стоя на его верхнем крае; иначе — в углу экрана.
+        if s.treeOnDock, let d = dockLocal, d.width > t.halfWidth * 2 + 20 {
+            let x = s.treeCorner == .left ? d.minX + t.halfWidth + 8 : d.maxX - t.halfWidth - 8
+            t.node.position = CGPoint(x: x, y: d.maxY + 1)
+        } else {
+            let margin: CGFloat = 24
+            let x = s.treeCorner == .left ? margin + t.halfWidth : size.width - margin - t.halfWidth
+            t.node.position = CGPoint(x: x, y: 2)
+        }
         t.update(dt: dt, mode: s.garlandMode)
         // Курсор задел ёлку — качнулась и стряхнула снег.
         treeShakeCooldown -= dt
@@ -820,6 +927,7 @@ final class SnowScene: SKScene {
                 b.pos.y = l.y + l.h[b.col]
                 if cursorMovedNow, let m = lastMouse, hypot(m.x - b.pos.x, m.y - b.pos.y) < 90 { scare(b, from: m); break }
                 if let tr = tractor, b.ledgeId == -1, abs(tr.x - b.pos.x) < 150 { scare(b, from: CGPoint(x: tr.x, y: 0)); break }
+                if let car = sedan, b.ledgeId == -1, abs(car.x - b.pos.x) < 200 { scare(b, from: CGPoint(x: car.x, y: 0)); break }
                 b.nextPeck -= dt
                 if b.nextPeck <= 0 { b.peck = 0.35; b.nextPeck = .random(in: 1.2...4) }
                 b.nextChirp -= dt
@@ -945,6 +1053,94 @@ final class SnowScene: SKScene {
         }
     }
 
+    // MARK: - Седан
+
+    /// Чёрный седан: проезжает и чистит (drift = false) или крутит пончики посреди экрана.
+    func callSedan(drift: Bool) {
+        guard sedan == nil else { return }
+        let dir: CGFloat = Bool.random() ? 1 : -1
+        let car = Sedan(mode: drift ? .drift : .clean, dir: dir,
+                        x: dir > 0 ? -Sedan.length : size.width + Sedan.length,
+                        driftAt: size.width * .random(in: 0.35...0.65))
+        car.node.zPosition = 1.55
+        tractorLayer.addChild(car.node)
+        sedan = car
+        Sound.shared.play(.engine)
+    }
+
+    private func stepSedan(_ dt: CGFloat) {
+        guard let car = sedan else { return }
+        switch car.phase {
+        case .enter:
+            if car.mode == .drift, (car.dir > 0 && car.x >= car.driftAt) || (car.dir < 0 && car.x <= car.driftAt) {
+                car.phase = .drifting
+                car.driftT = 0
+                Sound.shared.play(.skid)
+            }
+        case .drifting:
+            // Два «пончика»: машина скользит, гаснет скорость, морда разворачивается туда-обратно.
+            car.driftT += dt
+            let dur: CGFloat = 2.8
+            let k = min(1, car.driftT / dur)
+            car.speed = max(25, car.speed * (1 - 1.4 * dt))
+            car.facing = car.dir * cos(k * 2 * 2 * .pi)
+            if car.driftT > 1.4, car.driftT - dt <= 1.4 { Sound.shared.play(.skid) }
+            if k >= 1 {
+                car.phase = .leave
+                if Bool.random() { car.dir = -car.dir }
+                car.facing = car.dir
+                car.speed = 80
+                Sound.shared.play(.engine)
+            }
+        case .leave:
+            car.speed = min(460, car.speed + 520 * dt)
+        }
+        car.step(dt)
+
+        // Чистит снег под собой, при дрифте — шире.
+        var removed: CGFloat = 0
+        if let g = ledges[-1] {
+            let half: CGFloat = car.phase == .drifting ? 90 : 62
+            let c0 = max(0, Int((car.x - half - g.x0) / colW))
+            let c1 = min(g.n - 1, Int((car.x + half - g.x0) / colW))
+            if c0 <= c1 {
+                for c in c0...c1 where g.h[c] > 0 { removed += g.h[c] * colW; g.h[c] = 0 }
+                if removed > 0 { g.dirty = true; g.urgent = true }
+            }
+        }
+        let drifting = car.phase == .drifting
+        if removed > 0.5 || drifting {
+            if removed > 0.5 { Sound.shared.play(.crunch, gain: 0.5) }
+            let count = drifting ? 5 : min(8, Int(removed / 4) + 1)
+            for _ in 0..<count {
+                // Снег из-под колёс летит назад и вверх; при дрифте — во все стороны.
+                let side: CGFloat = drifting ? (Bool.random() ? 1 : -1) : -car.dir
+                addParticle(pos: CGPoint(x: car.rearWheel.x + .random(in: -8...8), y: .random(in: 3...12)),
+                            vel: CGVector(dx: side * .random(in: 80...280), dy: .random(in: 120...330)),
+                            size: .random(in: 2.5...5), volume: 0, ballistic: true, life: .random(in: 0.7...1.4))
+            }
+        }
+        if drifting {
+            car.smokeAcc += dt
+            if car.smokeAcc > 0.03 {
+                car.smokeAcc = 0
+                addParticle(pos: CGPoint(x: car.rearWheel.x + .random(in: -10...10), y: .random(in: 2...10)),
+                            vel: CGVector(dx: .random(in: -40...40), dy: .random(in: 20...60)),
+                            size: .random(in: 8...16), volume: 0, ballistic: false, life: .random(in: 0.9...1.6),
+                            tint: NSColor(calibratedWhite: 0.8, alpha: 1))
+            }
+        }
+        for b in balls where b.state == .resting && b.supportLedge == -1 && abs(b.pos.x - car.x) < Sedan.halfLength + b.r {
+            b.fall(vel: CGVector(dx: car.dir * 320, dy: 260))
+        }
+        let gone = car.phase != .drifting
+            && ((car.dir > 0 && car.x > size.width + Sedan.length) || (car.dir < 0 && car.x < -Sedan.length))
+        if gone {
+            car.node.removeFromParent()
+            sedan = nil
+        }
+    }
+
     // MARK: - Трактор
 
     private func stepTractor(_ dt: CGFloat, _ t: TimeInterval) {
@@ -953,7 +1149,13 @@ final class SnowScene: SKScene {
             if let g = ledges[-1] {
                 var sum: CGFloat = 0, n = 0
                 for c in 0..<g.n where g.visible[c] { sum += g.h[c]; n += 1 }
-                if n > 0, sum / CGFloat(n) > 14 { callTractor() }
+                if n > 0, sum / CGFloat(n) > 14, sedan == nil {
+                    switch Settings.shared.autoCleaner {
+                    case .tractor: callTractor()
+                    case .sedan: callSedan(drift: false)
+                    case .both: if Bool.random() { callTractor() } else { callSedan(drift: Bool.random()) }
+                    }
+                }
             }
         }
         guard let tr = tractor else { return }
@@ -1105,6 +1307,89 @@ final class SnowScene: SKScene {
 
     // MARK: - Текстура
 
+    /// Простая шестилучевая снежинка с «рожками» на концах.
+    private static func makeStarTexture() -> SKTexture {
+        let img = NSImage(size: NSSize(width: 48, height: 48), flipped: false) { rect in
+            let c = NSPoint(x: rect.midX, y: rect.midY)
+            let r: CGFloat = 21
+            func stroke(_ width: CGFloat, _ color: NSColor) {
+                let p = NSBezierPath()
+                for k in 0..<6 {
+                    let a = CGFloat(k) * .pi / 3 + .pi / 2
+                    let tip = NSPoint(x: c.x + cos(a) * r, y: c.y + sin(a) * r)
+                    p.move(to: c)
+                    p.line(to: tip)
+                    let m = NSPoint(x: c.x + cos(a) * r * 0.62, y: c.y + sin(a) * r * 0.62)
+                    for side: CGFloat in [-1, 1] {
+                        p.move(to: m)
+                        p.line(to: NSPoint(x: m.x + cos(a + side * 0.75) * r * 0.3, y: m.y + sin(a + side * 0.75) * r * 0.3))
+                    }
+                }
+                p.lineWidth = width
+                p.lineCapStyle = .round
+                color.setStroke()
+                p.stroke()
+            }
+            stroke(5, NSColor(calibratedRed: 0.7, green: 0.82, blue: 1, alpha: 0.35))
+            stroke(2.2, .white)
+            return true
+        }
+        return SKTexture(image: img)
+    }
+
+    /// Узорчатая снежинка-кристалл: шесть ветвистых лучей, у каждого варианта свой узор.
+    private static func makeCrystalTexture(seed: Int) -> SKTexture {
+        var rng = SeededRNG(seed: UInt64(seed * 7919 + 17))
+        let branches = (0..<3).map { _ in (CGFloat.random(in: 0.3...0.75, using: &rng), CGFloat.random(in: 0.18...0.38, using: &rng)) }
+        let tipFork = Bool.random(using: &rng)
+        let plate = CGFloat.random(in: 0.12...0.22, using: &rng)
+        let img = NSImage(size: NSSize(width: 96, height: 96), flipped: false) { rect in
+            let c = NSPoint(x: rect.midX, y: rect.midY)
+            let r: CGFloat = 44
+            func draw(_ width: CGFloat, _ color: NSColor) {
+                let p = NSBezierPath()
+                for k in 0..<6 {
+                    let a = CGFloat(k) * .pi / 3 + .pi / 2
+                    func pt(_ d: CGFloat, _ ang: CGFloat = a) -> NSPoint { NSPoint(x: c.x + cos(ang) * d, y: c.y + sin(ang) * d) }
+                    p.move(to: c)
+                    p.line(to: pt(r))
+                    for (pos, len) in branches {
+                        let m = pt(r * pos)
+                        for side: CGFloat in [-1, 1] {
+                            p.move(to: m)
+                            p.line(to: NSPoint(x: m.x + cos(a + side * .pi / 3) * r * len, y: m.y + sin(a + side * .pi / 3) * r * len))
+                        }
+                    }
+                    if tipFork {
+                        let m = pt(r * 0.88)
+                        for side: CGFloat in [-1, 1] {
+                            p.move(to: m)
+                            p.line(to: NSPoint(x: m.x + cos(a + side * 0.6) * r * 0.14, y: m.y + sin(a + side * 0.6) * r * 0.14))
+                        }
+                    }
+                }
+                // Шестиугольник в центре.
+                let hex = NSBezierPath()
+                for k in 0..<6 {
+                    let a = CGFloat(k) * .pi / 3
+                    let q = NSPoint(x: c.x + cos(a) * r * plate, y: c.y + sin(a) * r * plate)
+                    if k == 0 { hex.move(to: q) } else { hex.line(to: q) }
+                }
+                hex.close()
+                p.append(hex)
+                p.lineWidth = width
+                p.lineCapStyle = .round
+                p.lineJoinStyle = .round
+                color.setStroke()
+                p.stroke()
+            }
+            draw(6, NSColor(calibratedRed: 0.65, green: 0.8, blue: 1, alpha: 0.3))
+            draw(2.4, .white)
+            return true
+        }
+        return SKTexture(image: img)
+    }
+
     private static func makeFlakeTexture() -> SKTexture {
         let img = NSImage(size: NSSize(width: 32, height: 32), flipped: false) { rect in
             let g = NSGradient(colors: [
@@ -1117,5 +1402,18 @@ final class SnowScene: SKScene {
             return true
         }
         return SKTexture(image: img)
+    }
+}
+
+/// Детерминированный генератор: у каждого варианта кристалла узор всегда один и тот же.
+struct SeededRNG: RandomNumberGenerator {
+    var state: UInt64
+    init(seed: UInt64) { state = seed &+ 0x9E3779B97F4A7C15 }
+    mutating func next() -> UInt64 {
+        state = state &* 6364136223846793005 &+ 1442695040888963407
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
+        z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
+        return z ^ (z >> 31)
     }
 }

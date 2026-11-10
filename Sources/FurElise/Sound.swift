@@ -6,7 +6,7 @@ final class Sound {
     static let shared = Sound()
 
     enum Effect: CaseIterable {
-        case bells, crunch, pop, whoosh, chirp, tinkle, splat
+        case bells, crunch, pop, whoosh, chirp, tinkle, splat, engine, skid, crackle
     }
 
     private let engine = AVAudioEngine()
@@ -21,10 +21,12 @@ final class Sound {
     /// Не чаще, чем раз в столько секунд для каждого эффекта — чтобы не трещало.
     private let minGap: [Effect: TimeInterval] = [
         .bells: 0.5, .crunch: 0.12, .pop: 0.08, .whoosh: 0.25, .chirp: 0.3, .tinkle: 0.2, .splat: 0.1,
+        .engine: 1.0, .skid: 1.5, .crackle: 1.4,
     ]
     /// Относительная громкость эффектов — все тихие, хруст тише всего.
     private let level: [Effect: Float] = [
         .bells: 0.35, .crunch: 0.18, .pop: 0.45, .whoosh: 0.15, .chirp: 0.3, .tinkle: 0.3, .splat: 0.4,
+        .engine: 0.35, .skid: 0.12, .crackle: 0.25,
     ]
 
     func play(_ e: Effect, gain: Float = 1) {
@@ -79,6 +81,16 @@ final class Sound {
         case .chirp: b = render(0.35) { t in Sound.chirp(t) }
         case .tinkle: b = render(0.8) { t in Sound.tinkle(t) }
         case .splat: b = render(0.25) { t in (Sound.noise() * 0.6 + sin(2 * .pi * 90 * t)) * exp(-t * 22) }
+        case .engine: b = render(1.4) { t in Sound.engine(t) }
+        case .skid: b = render(1.6) { t in Sound.skid(t) }
+        case .crackle:
+            // Треск дров: россыпь коротких щелчков в случайные моменты.
+            let pops = (0..<14).map { _ in (Double.random(in: 0...1.4), Double.random(in: 0.3...1)) }
+            b = render(1.5) { t in
+                var v = 0.0
+                for (s, a) in pops where t >= s { v += Sound.noise() * a * exp(-(t - s) * 70) }
+                return v
+            }
         }
         buffers[e] = b
         return b
@@ -129,6 +141,24 @@ final class Sound {
             return sin(2 * .pi * f * x) * sin(.pi * x / 0.12)
         }
         return tweet(t) + 0.8 * tweet(t - 0.17)
+    }
+
+    /// Рёв мотора: обороты растут, низкий «пилообразный» гул с шумом выхлопа.
+    private static func engine(_ t: Double) -> Double {
+        let f0 = 55.0, f1 = 150.0, T = 1.4
+        // Фаза частоты, растущей по квадрату: интеграл f(t) = f0 + (f1 - f0)·(t/T)².
+        let phase = 2 * .pi * (f0 * t + (f1 - f0) * t * t * t / (3 * T * T))
+        var v = 0.0
+        for n in 1...6 { v += sin(Double(n) * phase) / Double(n) }
+        let env = min(1, t / 0.08) * (t < 1.0 ? 1 : exp(-(t - 1.0) * 6))
+        return (v * 0.8 + noise() * 0.25) * env
+    }
+
+    /// Визг шин: высокий тон с дрожанием поверх шума, плавно стихает.
+    private static func skid(_ t: Double) -> Double {
+        let f = 1050 + 60 * sin(2 * .pi * 7 * t)
+        let env = min(1, t / 0.05) * exp(-t * 1.6)
+        return (sin(2 * .pi * f * t) * 0.6 + noise() * 0.4) * env
     }
 
     /// Звон льдинок: россыпь высоких «динь».
