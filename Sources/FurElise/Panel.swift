@@ -49,11 +49,10 @@ struct PanelView: View {
                     tractorCard
                 case .decor:
                     garlandCard
+                    treeCard
                     iciclesCard
                     frostCard
-                    birdsCard
-                    santaCard
-                    newYearCard
+                    extrasCard
                 case .more:
                     soundCard
                     musicCard
@@ -296,50 +295,74 @@ struct PanelView: View {
         .card()
     }
 
-    private var birdsCard: some View {
-        HStack {
-            Text("🐦").font(.system(size: 22))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(tr("Снегири", "Bullfinches")).font(.subheadline.weight(.semibold))
-                Text(tr("Садятся на сугробы, пугаются курсора", "Perch on snowdrifts, flee from the cursor"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+    private var treeCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("🎄").font(.system(size: 15))
+                Text(tr("Ёлка", "Christmas tree")).font(.subheadline.weight(.semibold))
+                Spacer()
+                Toggle("", isOn: $s.tree).toggleStyle(.switch).labelsHidden().controlSize(.small)
             }
-            Spacer()
-            Toggle("", isOn: $s.birds).toggleStyle(.switch).labelsHidden().controlSize(.small)
+            if s.tree {
+                HStack {
+                    Text(tr("Угол", "Corner")).font(.caption).foregroundStyle(.secondary).frame(width: 52, alignment: .leading)
+                    Picker("", selection: $s.treeCorner) {
+                        ForEach(TreeCorner.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity)
+                }
+                Picker("", selection: $s.treeSize) {
+                    ForEach(TreeSize.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
+                HStack {
+                    Text(tr("Огоньки", "Lights")).font(.caption).foregroundStyle(.secondary).frame(width: 52, alignment: .leading)
+                    Picker("", selection: $s.treeLights) {
+                        ForEach(GarlandStyle.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity)
+                }
+                Toggle(tr("Подарки под ёлкой", "Gifts under the tree"), isOn: $s.treeGifts)
+                    .toggleStyle(.checkbox)
+                    .font(.caption)
+            }
         }
         .card()
     }
 
-    private var santaCard: some View {
-        HStack {
-            Text("🛷").font(.system(size: 22))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(tr("Дед Мороз", "Father Frost")).font(.subheadline.weight(.semibold))
-                Toggle(tr("Иногда пролетает", "Flies by now and then"), isOn: $s.santa)
-                    .toggleStyle(.checkbox)
-                    .font(.caption)
+    /// Снегири, Дед Мороз и Новый год — одной карточкой, чтобы панель не росла.
+    private var extrasCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("🐦")
+                Toggle(tr("Снегири", "Bullfinches"), isOn: $s.birds).toggleStyle(.checkbox)
+                Spacer()
             }
-            Spacer()
-            Button(tr("Сейчас", "Now"), action: actions.santa)
+            HStack {
+                Text("🛷")
+                Toggle(tr("Дед Мороз иногда пролетает", "Father Frost flies by"), isOn: $s.santa).toggleStyle(.checkbox)
+                Spacer()
+                Button(tr("Сейчас", "Now"), action: actions.santa).controlSize(.small)
+            }
+            HStack {
+                Text("🎆")
+                Toggle(tr("Салют в Новый год", "New Year fireworks"), isOn: $s.newYear).toggleStyle(.checkbox)
+                Spacer()
+                Button(tr("Салют!", "Fireworks!"), action: actions.fireworks).controlSize(.small)
+            }
         }
+        .font(.callout)
         .card()
     }
 
-    private var newYearCard: some View {
-        HStack {
-            Text("🎆").font(.system(size: 22))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(tr("Новый год", "New Year")).font(.subheadline.weight(.semibold))
-                Toggle(tr("Отсчёт и салют в полночь", "Countdown and fireworks at midnight"), isOn: $s.newYear)
-                    .toggleStyle(.checkbox)
-                    .font(.caption)
-            }
-            Spacer()
-            Button(tr("Салют!", "Fireworks!"), action: actions.fireworks)
-        }
-        .card()
-    }
+
+
 
     // MARK: - Вкладка «Ещё»
 

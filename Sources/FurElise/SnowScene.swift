@@ -34,6 +34,9 @@ final class SnowScene: SKScene {
     private let splatLayer = SKNode()
     private var lastWins: [WinInfo] = []
     private var frost: Frost?
+    private var tree: ChristmasTree?
+    private var treeBuilt = ""
+    private var treeShakeCooldown: CGFloat = 0
     private var cursorMovedNow = false
     private var meltAcc: CGFloat = 0
     private var countdownEnd: TimeInterval?
@@ -193,6 +196,7 @@ final class SnowScene: SKScene {
         stepBirds(dt, currentTime)
         stepSplats(dt)
         stepFrost(dt)
+        stepTree(dt)
         stepCountdown(currentTime)
         refreshLedges(currentTime)
         adaptFrameRate(currentTime)
@@ -719,6 +723,43 @@ final class SnowScene: SKScene {
             .fadeOut(withDuration: 2),
             .removeFromParent(),
         ]))
+    }
+
+    // MARK: - Ёлка
+
+    private func stepTree(_ dt: CGFloat) {
+        let s = Settings.shared
+        let key = s.tree ? "\(s.treeCorner.rawValue)-\(s.treeSize.rawValue)-\(s.treeLights.rawValue)-\(s.treeGifts)" : ""
+        if key != treeBuilt {
+            tree?.node.removeFromParent()
+            tree = nil
+            if s.tree {
+                let t = ChristmasTree(height: s.treeSize.height, lights: s.treeLights, gifts: s.treeGifts)
+                let margin: CGFloat = 24
+                let x = s.treeCorner == .left ? margin + t.halfWidth : size.width - margin - t.halfWidth
+                t.node.position = CGPoint(x: x, y: 2)
+                t.node.zPosition = 0.95
+                addChild(t.node)
+                tree = t
+            }
+            treeBuilt = key
+        }
+        guard let t = tree else { return }
+        t.update(dt: dt, mode: s.garlandMode)
+        // Курсор задел ёлку — качнулась и стряхнула снег.
+        treeShakeCooldown -= dt
+        if cursorMovedNow, treeShakeCooldown <= 0, let m = lastMouse {
+            let local = CGPoint(x: m.x - t.node.position.x, y: m.y - t.node.position.y)
+            if abs(local.x) < t.halfWidth, local.y > 0, local.y < t.height {
+                treeShakeCooldown = 0.6
+                t.nudge(mouseVel.dx > 0 ? -0.6 : 0.6)
+                for _ in 0..<12 {
+                    puff(at: CGPoint(x: t.node.position.x + .random(in: -t.halfWidth...t.halfWidth) * 0.7,
+                                     y: t.node.position.y + .random(in: 0.2...0.9) * t.height), spread: 4)
+                }
+                Sound.shared.play(.crunch, gain: 0.6)
+            }
+        }
     }
 
     // MARK: - Иней

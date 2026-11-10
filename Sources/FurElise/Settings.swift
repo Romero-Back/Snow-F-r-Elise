@@ -89,6 +89,37 @@ enum IcicleSize: String, CaseIterable {
     }
 }
 
+enum TreeCorner: String, CaseIterable {
+    case left, right
+
+    var title: String {
+        switch self {
+        case .left: return tr("Слева", "Left")
+        case .right: return tr("Справа", "Right")
+        }
+    }
+}
+
+enum TreeSize: String, CaseIterable {
+    case small, medium, large
+
+    var title: String {
+        switch self {
+        case .small: return tr("Маленькая", "Small")
+        case .medium: return tr("Средняя", "Medium")
+        case .large: return tr("Большая", "Large")
+        }
+    }
+
+    var height: CGFloat {
+        switch self {
+        case .small: return 120
+        case .medium: return 180
+        case .large: return 260
+        }
+    }
+}
+
 enum FrostSize: String, CaseIterable {
     case light, heavy
 
@@ -130,6 +161,11 @@ final class Settings: ObservableObject {
     /// Снег тает, когда Mac горячий или за окном плюс.
     @Published var melting: Bool { didSet { d.set(melting, forKey: "melting") } }
     @Published var musicOnSnowman: Bool { didSet { d.set(musicOnSnowman, forKey: "musicOnSnowman") } }
+    @Published var tree: Bool { didSet { d.set(tree, forKey: "tree") } }
+    @Published var treeCorner: TreeCorner { didSet { d.set(treeCorner.rawValue, forKey: "treeCorner") } }
+    @Published var treeSize: TreeSize { didSet { d.set(treeSize.rawValue, forKey: "treeSize") } }
+    @Published var treeLights: GarlandStyle { didSet { d.set(treeLights.rawValue, forKey: "treeLights") } }
+    @Published var treeGifts: Bool { didSet { d.set(treeGifts, forKey: "treeGifts") } }
     @Published var frost: Bool { didSet { d.set(frost, forKey: "frost") } }
     @Published var frostSize: FrostSize { didSet { d.set(frostSize.rawValue, forKey: "frostSize") } }
     @Published var birds: Bool { didSet { d.set(birds, forKey: "birds") } }
@@ -163,6 +199,11 @@ final class Settings: ObservableObject {
         melting = d.object(forKey: "melting") as? Bool ?? false
         musicOnSnowman = d.object(forKey: "musicOnSnowman") as? Bool ?? false
         language = d.string(forKey: "language") ?? "ru"
+        tree = d.object(forKey: "tree") as? Bool ?? false
+        treeCorner = TreeCorner(rawValue: d.string(forKey: "treeCorner") ?? "") ?? .right
+        treeSize = TreeSize(rawValue: d.string(forKey: "treeSize") ?? "") ?? .medium
+        treeLights = GarlandStyle(rawValue: d.string(forKey: "treeLights") ?? "") ?? .multicolor
+        treeGifts = d.object(forKey: "treeGifts") as? Bool ?? true
         frost = d.object(forKey: "frost") as? Bool ?? false
         frostSize = FrostSize(rawValue: d.string(forKey: "frostSize") ?? "") ?? .light
         birds = d.object(forKey: "birds") as? Bool ?? false
