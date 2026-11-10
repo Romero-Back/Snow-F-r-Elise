@@ -1,6 +1,8 @@
 import AppKit
 import SpriteKit
 import ServiceManagement
+import SwiftUI
+import Combine
 
 /// SKView, которая рендерит в разрешении 1x даже на Retina: пикселей в 4 раза меньше.
 /// Снег мягкий, поэтому на вид разницы почти нет, а GPU и композитору заметно легче.
@@ -54,7 +56,7 @@ final class Overlay {
         window.contentView = view
         window.setFrame(frame, display: false)
 
-        scene = SnowScene(screenFrame: frame)
+        scene = SnowScene(screenFrame: frame, menuBarInset: max(0, frame.maxY - screen.visibleFrame.maxY))
         view.presentScene(scene)
         view.renderScale = 1.5
         window.orderFrontRegardless()
@@ -82,30 +84,27 @@ final class Overlay {
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var statusItem: NSStatusItem!
     private var overlays: [Overlay] = []
     private var timer: Timer?
-
-    private var pauseItem: NSMenuItem!
-    private var intensityItems: [Intensity: NSMenuItem] = [:]
-    private var toolItems: [Tool: NSMenuItem] = [:]
-    private var windItems: [Int: NSMenuItem] = [:]
-    private var loginItem: NSMenuItem!
-    private var dockAccessItem: NSMenuItem!
     private var tick = 0
     private var dockFrame: CGRect?
-    private var enabledItem: NSMenuItem!
-    private var autoTractorItem: NSMenuItem!
+
+    private let popover = NSPopover()
+    private let panelState = PanelState()
+    private var subs: Set<AnyCancellable> = []
+    private var outsideClickMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        setupMenu()
+        setupStatusItem()
+        setupPopover()
+        observeSettings()
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(pollWindows),
                                                           name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
-        // Автоматизация: `notifyutil`-подобный вызов из скриптов/Shortcuts —
-        // distributed notification «app.snowfall.FurElise.tractor» вызывает трактор.
+        // Автоматизация: distributed notification «app.snowfall.FurElise.tractor» вызывает трактор.
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(callTractor),
                                                             name: .init("app.snowfall.FurElise.tractor"), object: nil)
         if Settings.shared.enabled { start() }
@@ -163,182 +162,122 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for o in overlays where !o.away { o.scene.updateWindows(wins) }
     }
 
-    // MARK: - Меню
+    // MARK: - Строка меню и панель
 
-    private func setupMenu() {
+    private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         let img = NSImage(systemSymbolName: "snowflake", accessibilityDescription: "Für Elise")
         img?.isTemplate = true
         statusItem.button?.image = img
-
-        let menu = NSMenu()
-        menu.delegate = self
-
-        // Название — как на автографе Бетховена.
-        let title = NSMenuItem(title: "Für Elise", action: nil, keyEquivalent: "")
-        let script = NSFont(name: "SnellRoundhand-Bold", size: 22) ?? NSFont.systemFont(ofSize: 15, weight: .semibold)
-        title.attributedTitle = NSAttributedString(string: "Für Elise", attributes: [.font: script])
-        title.isEnabled = false
-        menu.addItem(title)
-        menu.addItem(.separator())
-
-        enabledItem = item("Выключить снег", #selector(toggleEnabled), key: "e")
-        menu.addItem(enabledItem)
-        pauseItem = item("Пауза", #selector(togglePause), key: "p")
-        menu.addItem(pauseItem)
-        menu.addItem(item("Очистить снег", #selector(clearSnow), key: "k"))
-        menu.addItem(.separator())
-
-        menu.addItem(header("Снегопад"))
-        for i in Intensity.allCases {
-            let it = item(i.title, #selector(setIntensity(_:)))
-            it.representedObject = i.rawValue
-            intensityItems[i] = it
-            menu.addItem(it)
-        }
-        menu.addItem(.separator())
-
-        menu.addItem(header("Инструмент"))
-        for t in Tool.allCases {
-            let it = item(t.title, #selector(setTool(_:)))
-            it.representedObject = t.rawValue
-            toolItems[t] = it
-            menu.addItem(it)
-        }
-        menu.addItem(.separator())
-
-        menu.addItem(header("Трактор"))
-        menu.addItem(item("Вызвать трактор", #selector(callTractor), key: "t"))
-        autoTractorItem = item("Сам чистит сугробы", #selector(toggleAutoTractor))
-        menu.addItem(autoTractorItem)
-        menu.addItem(.separator())
-
-        menu.addItem(header("Ветер"))
-        let winds: [(Int, String)] = [(-2, "← Сильный"), (-1, "← Слабый"), (0, "Штиль"), (1, "Слабый →"), (2, "Сильный →")]
-        for (v, title) in winds {
-            let it = item(title, #selector(setWind(_:)))
-            it.tag = v
-            windItems[v] = it
-            menu.addItem(it)
-        }
-        menu.addItem(.separator())
-
-        let hint = NSMenuItem(title: "Снежок: зажмите ⌥ и ведите курсором по снегу", action: nil, keyEquivalent: "")
-        hint.isEnabled = false
-        menu.addItem(hint)
-        let hint2 = NSMenuItem(title: "Три снежка друг на друге — снеговик ☃︎", action: nil, keyEquivalent: "")
-        hint2.isEnabled = false
-        menu.addItem(hint2)
-        menu.addItem(.separator())
-
-        dockAccessItem = item("Снег на Dock: дать доступ…", #selector(requestDockAccess))
-        menu.addItem(dockAccessItem)
-        loginItem = item("Запускать при входе", #selector(toggleLogin))
-        menu.addItem(loginItem)
-        menu.addItem(item("Выйти", #selector(quit), key: "q"))
-
-        statusItem.menu = menu
-        refreshMenu()
+        statusItem.button?.target = self
+        statusItem.button?.action = #selector(togglePopover)
     }
 
-    private func item(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
-        let it = NSMenuItem(title: title, action: action, keyEquivalent: key)
-        it.target = self
-        return it
+    private func setupPopover() {
+        let actions = PanelActions(
+            callTractor: { [weak self] in self?.callTractor() },
+            clearSnow: { [weak self] in self?.overlays.forEach { $0.scene.clearAll() } },
+            dockAction: { [weak self] in self?.dockAction() },
+            setLaunchAtLogin: { [weak self] on in self?.setLaunchAtLogin(on) },
+            quit: { NSApp.terminate(nil) })
+        let host = NSHostingController(rootView: PanelView(state: panelState, actions: actions))
+        host.sizingOptions = .preferredContentSize
+        popover.contentViewController = host
+        popover.behavior = .transient
+        popover.animates = true
+        popover.delegate = self
     }
 
-    private func header(_ title: String) -> NSMenuItem {
-        let it = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        it.isEnabled = false
-        return it
+    @objc private func togglePopover() {
+        if popover.isShown {
+            popover.performClose(nil)
+            return
+        }
+        guard let button = statusItem.button else { return }
+        refreshPanelState()
+        NSApp.activate(ignoringOtherApps: true)
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        // Панель должна быть над окнами снега (у них уровень statusBar).
+        popover.contentViewController?.view.window?.level = .popUpMenu
+        // Приложение без Dock-иконки: клик мимо панели не всегда её закрывает — страхуемся.
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            self?.popover.performClose(nil)
+        }
     }
 
-    func menuWillOpen(_ menu: NSMenu) { refreshMenu() }
+    func popoverDidClose(_ notification: Notification) {
+        if let m = outsideClickMonitor { NSEvent.removeMonitor(m) }
+        outsideClickMonitor = nil
+    }
 
-    private func refreshMenu() {
-        let s = Settings.shared
-        enabledItem.title = s.enabled ? "Выключить снег" : "Включить снег"
-        autoTractorItem.state = s.autoTractor ? .on : .off
-        pauseItem.state = s.paused ? .on : .off
-        intensityItems.forEach { $0.value.state = $0.key == s.intensity ? .on : .off }
-        toolItems.forEach { $0.value.state = $0.key == s.tool ? .on : .off }
-        windItems.forEach { $0.value.state = $0.key == s.wind ? .on : .off }
-        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        statusItem.button?.appearsDisabled = s.paused || !s.enabled
+    private func refreshPanelState() {
         switch (DockTracker.hasAccess, DockTracker.status) {
         case (false, _):
-            dockAccessItem.title = "Снег на Dock: дать доступ…"
-            dockAccessItem.action = #selector(requestDockAccess)
+            panelState.dockText = "Снег на Dock: нужен доступ"
+            panelState.dockAction = .grant
         case (true, .ok):
-            dockAccessItem.title = "Снег на Dock: работает ✓"
-            dockAccessItem.action = nil
+            panelState.dockText = "Снег на Dock: работает ✓"
+            panelState.dockAction = .none
         case (true, .hidden):
-            dockAccessItem.title = "Снег на Dock: Dock скрыт"
-            dockAccessItem.action = nil
+            panelState.dockText = "Снег на Dock: Dock скрыт"
+            panelState.dockAction = .none
         case (true, _):
             // Доступ выдан, но API Dock ещё не отвечает — обычно помогает перезапуск.
-            dockAccessItem.title = "Снег на Dock: перезапустить приложение"
-            dockAccessItem.action = #selector(relaunch)
+            panelState.dockText = "Снег на Dock: нужен перезапуск"
+            panelState.dockAction = .relaunch
         }
+        panelState.launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 
-    @objc private func togglePause() {
-        Settings.shared.paused.toggle()
-        overlays.forEach { $0.syncPaused() }
-        refreshMenu()
+    /// Реакция на изменения настроек из панели. @Published шлёт значение до записи — поэтому async.
+    private func observeSettings() {
+        let s = Settings.shared
+        s.$enabled.dropFirst().removeDuplicates().sink { [weak self] on in
+            DispatchQueue.main.async {
+                if on { self?.start() } else { self?.stop() }
+                self?.updateIcon()
+            }
+        }.store(in: &subs)
+        s.$paused.dropFirst().removeDuplicates().sink { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.overlays.forEach { $0.syncPaused() }
+                self?.updateIcon()
+            }
+        }.store(in: &subs)
+        updateIcon()
     }
 
-    @objc private func toggleEnabled() {
-        Settings.shared.enabled.toggle()
-        if Settings.shared.enabled { start() } else { stop() }
-        refreshMenu()
+    private func updateIcon() {
+        statusItem.button?.appearsDisabled = Settings.shared.paused || !Settings.shared.enabled
     }
 
     @objc private func callTractor() { overlays.forEach { $0.scene.callTractor() } }
 
-    @objc private func toggleAutoTractor() {
-        Settings.shared.autoTractor.toggle()
-        refreshMenu()
+    private func dockAction() {
+        switch panelState.dockAction {
+        case .grant: DockTracker.requestAccess()
+        case .relaunch: relaunch()
+        case .none: break
+        }
     }
 
-    @objc private func clearSnow() { overlays.forEach { $0.scene.clearAll() } }
-
-    @objc private func setIntensity(_ sender: NSMenuItem) {
-        if let raw = sender.representedObject as? String, let v = Intensity(rawValue: raw) { Settings.shared.intensity = v }
-        refreshMenu()
-    }
-
-    @objc private func setTool(_ sender: NSMenuItem) {
-        if let raw = sender.representedObject as? String, let v = Tool(rawValue: raw) { Settings.shared.tool = v }
-        refreshMenu()
-    }
-
-    @objc private func setWind(_ sender: NSMenuItem) {
-        Settings.shared.wind = sender.tag
-        refreshMenu()
-    }
-
-    @objc private func toggleLogin() {
+    private func setLaunchAtLogin(_ on: Bool) {
         let svc = SMAppService.mainApp
         do {
-            if svc.status == .enabled { try svc.unregister() } else { try svc.register() }
+            if on { try svc.register() } else { try svc.unregister() }
         } catch {
             NSLog("Für Elise: не удалось изменить автозапуск: \(error)")
         }
-        refreshMenu()
+        panelState.launchAtLogin = svc.status == .enabled
     }
 
-    @objc private func requestDockAccess() { DockTracker.requestAccess() }
-
-    @objc private func relaunch() {
+    private func relaunch() {
         let cfg = NSWorkspace.OpenConfiguration()
         cfg.createsNewApplicationInstance = true
         NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: cfg) { _, _ in
             DispatchQueue.main.async { NSApp.terminate(nil) }
         }
     }
-
-    @objc private func quit() { NSApp.terminate(nil) }
 }
 
 let app = NSApplication.shared

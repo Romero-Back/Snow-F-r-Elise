@@ -4,6 +4,8 @@ import AppKit
 /// Сцена снега для одного экрана. Координаты сцены — точки относительно левого нижнего угла экрана.
 final class SnowScene: SKScene {
     let screenFrame: CGRect
+    /// Высота строки меню сверху экрана — под ней висит гирлянда.
+    let menuBarInset: CGFloat
 
     private var ledges: [Int: Ledge] = [:]
     private var particles: [Particle] = []
@@ -11,6 +13,9 @@ final class SnowScene: SKScene {
     private var balls: [Snowball] = []
     private var heldBall: Snowball?
     private var tractor: Tractor?
+    private var garland: Garland?
+    private var garlandBuilt: GarlandStyle = .off
+    private var accumulating = true
     private var autoTractorCheckAt: TimeInterval = 0
 
     private let flakeTexture = SnowScene.makeFlakeTexture()
@@ -18,6 +23,7 @@ final class SnowScene: SKScene {
     private let ballLayer = SKNode()
     private let flakeLayer = SKNode()
     private let tractorLayer = SKNode()
+    private let garlandLayer = SKNode()
 
     private var lastTime: TimeInterval = 0
     private var spawnAcc: CGFloat = 0
@@ -28,8 +34,9 @@ final class SnowScene: SKScene {
     private let maxParticles = 3000
     private let maxBalls = 30
 
-    init(screenFrame: CGRect) {
+    init(screenFrame: CGRect, menuBarInset: CGFloat) {
         self.screenFrame = screenFrame
+        self.menuBarInset = menuBarInset
         super.init(size: screenFrame.size)
         backgroundColor = .clear
         scaleMode = .resizeFill
@@ -38,7 +45,9 @@ final class SnowScene: SKScene {
         ballLayer.zPosition = 1
         flakeLayer.zPosition = 2
         tractorLayer.zPosition = 1.5
+        garlandLayer.zPosition = 1.8
         addChild(tractorLayer)
+        addChild(garlandLayer)
         addChild(ledgeLayer)
         addChild(ballLayer)
         addChild(flakeLayer)
@@ -121,6 +130,8 @@ final class SnowScene: SKScene {
         stepParticles(dt)
         stepBalls(dt)
         stepTractor(dt, currentTime)
+        syncAccumulation()
+        syncGarland(currentTime)
         refreshLedges(currentTime)
         adaptFrameRate(currentTime)
     }
@@ -206,7 +217,7 @@ final class SnowScene: SKScene {
                 p.life -= dt
                 p.node.alpha = max(0, min(1, p.life * 1.5))
                 dead = p.life <= 0
-            } else if p.vel.dy < 0 {
+            } else if p.vel.dy < 0, accumulating {
                 if let hit = landing(x: p.pos.x, from: oldY, to: p.pos.y) {
                     hit.0.h[hit.1] += p.volume / colW
                     hit.0.dirty = true
@@ -447,6 +458,39 @@ final class SnowScene: SKScene {
         hide(from: startX - 10_000, to: screenFrame.minX)
         hide(from: screenFrame.maxX, to: screenFrame.maxX + 10_000)
         return vis
+    }
+
+    // MARK: - Сугробы вкл/выкл и гирлянда
+
+    /// Выключили накопление — весь лежащий снег осыпается, снежки рассыпаются.
+    private func syncAccumulation() {
+        let want = Settings.shared.accumulate
+        guard want != accumulating else { return }
+        accumulating = want
+        guard !want else { return }
+        for l in ledges.values {
+            shakeOff(l, vel: .zero)
+            for i in 0..<l.n { l.h[i] = 0 }
+            l.dirty = true
+            l.urgent = true
+        }
+        for b in balls { removeBall(b, puff: true) }
+        heldBall = nil
+    }
+
+    private func syncGarland(_ t: TimeInterval) {
+        let style = Settings.shared.garland
+        if style != garlandBuilt {
+            garland?.node.removeFromParent()
+            garland = nil
+            if style != .off {
+                let g = Garland(width: size.width, topY: size.height - menuBarInset, style: style)
+                garlandLayer.addChild(g.node)
+                garland = g
+            }
+            garlandBuilt = style
+        }
+        garland?.update(t: CGFloat(t), mode: Settings.shared.garlandMode)
     }
 
     // MARK: - Трактор
