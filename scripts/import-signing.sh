@@ -16,4 +16,7 @@ security set-keychain-settings "$KC"
 security unlock-keychain -p furelise "$KC"
 security import .signing/cert.p12 -k "$KC" -P furelise -T /usr/bin/codesign >/dev/null
 security set-key-partition-list -S apple-tool:,apple: -s -k furelise "$KC" >/dev/null
+# На раннере codesign ищет ключ только в связках из списка поиска — добавляем свою.
+security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+security find-identity -p codesigning "$KC"
 echo "Сертификат подписи импортирован"
