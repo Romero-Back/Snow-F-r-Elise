@@ -1,0 +1,35 @@
+name: Release
+
+# Тег вида v1.2.0 → сборка и GitHub Release с FurElise.dmg и FurElise.zip.
+# Ручной запуск (Run workflow) → сборка в артефактах без релиза.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then export VERSION="${GITHUB_REF_NAME#v}"; fi
+          ./build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FurElise
+          path: |
+            build/FurElise.dmg
+            build/FurElise.zip
+
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            build/FurElise.dmg
+            build/FurElise.zip
