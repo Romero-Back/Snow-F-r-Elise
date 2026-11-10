@@ -6,6 +6,8 @@ final class PanelState: ObservableObject {
     @Published var dockText = ""
     @Published var dockAction: DockAction = .none
     @Published var launchAtLogin = false
+    /// Открытая вкладка. Здесь, а не в @State: в Command Line Tools нет плагина макросов SwiftUI.
+    @Published var tab: PanelView.Tab = .snow
 }
 
 struct PanelActions {
@@ -14,10 +16,15 @@ struct PanelActions {
     var dockAction: () -> Void
     var setLaunchAtLogin: (Bool) -> Void
     var checkForUpdates: () -> Void
+    var playMusic: () -> Void
+    var fireworks: () -> Void
+    var santa: () -> Void
     var quit: () -> Void
 }
 
 struct PanelView: View {
+    enum Tab: Hashable { case snow, decor, more }
+
     @ObservedObject var s = Settings.shared
     @ObservedObject var state: PanelState
     let actions: PanelActions
@@ -26,12 +33,33 @@ struct PanelView: View {
         VStack(alignment: .leading, spacing: 10) {
             header
             if s.enabled {
-                snowCard
-                cursorCard
-                garlandCard
-                tractorCard
+                Picker("", selection: $state.tab) {
+                    Text(tr("Снег", "Snow")).tag(Tab.snow)
+                    Text(tr("Украшения", "Decor")).tag(Tab.decor)
+                    Text(tr("Ещё", "More")).tag(Tab.more)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
+
+                switch state.tab {
+                case .snow:
+                    snowCard
+                    cursorCard
+                    tractorCard
+                case .decor:
+                    garlandCard
+                    iciclesCard
+                    santaCard
+                    newYearCard
+                case .more:
+                    musicCard
+                    meltCard
+                    systemCard
+                }
             } else {
-                Text("Снег выключен и не нагружает Mac. Включите переключателем сверху.")
+                Text(tr("Снег выключен и не нагружает Mac. Включите переключателем сверху.",
+                        "Snow is off and uses no resources. Turn it on with the switch above."))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -40,14 +68,14 @@ struct PanelView: View {
             footer
         }
         .padding(14)
-        .frame(width: 340)
+        .frame(width: 350)
         .background(
             LinearGradient(colors: [Color(red: 0.35, green: 0.55, blue: 0.95).opacity(0.18), .clear],
                            startPoint: .top, endPoint: .center)
         )
     }
 
-    // MARK: - Шапка
+    // MARK: - Шапка и подвал
 
     private var header: some View {
         HStack(alignment: .center) {
@@ -62,38 +90,69 @@ struct PanelView: View {
             Toggle("", isOn: $s.enabled)
                 .toggleStyle(.switch)
                 .labelsHidden()
-                .help(s.enabled ? "Выключить снег полностью" : "Включить снег")
+                .help(s.enabled ? tr("Выключить снег полностью", "Turn snow off completely")
+                                : tr("Включить снег", "Turn snow on"))
         }
         .padding(.horizontal, 4)
         .padding(.bottom, 2)
     }
 
-    // MARK: - Карточки
+    private var footer: some View {
+        HStack {
+            Button(action: actions.clearSnow) { Label(tr("Очистить снег", "Clear snow"), systemImage: "trash") }
+                .disabled(!s.enabled)
+            Spacer()
+            Button(action: actions.quit) { Label(tr("Выйти", "Quit"), systemImage: "power") }
+                .keyboardShortcut("q")
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 4)
+        .padding(.top, 2)
+    }
+
+    // MARK: - Вкладка «Снег»
 
     private var snowCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            title("Снегопад", "cloud.snow.fill")
-            Picker("", selection: $s.intensity) {
-                ForEach(Intensity.allCases, id: \.self) { Text($0.title).tag($0) }
+            HStack {
+                title(tr("Снегопад", "Snowfall"), "cloud.snow.fill")
+                Spacer()
+                Picker("", selection: $s.weatherCity) {
+                    Text(tr("Вручную", "Manual")).tag("")
+                    Divider()
+                    ForEach(Cities.all, id: \.id) { Text($0.name).tag($0.id) }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .controlSize(.small)
+                .help(tr("Снег и ветер как сейчас в выбранном городе", "Snow and wind as they are now in the chosen city"))
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(maxWidth: .infinity)
 
-            HStack(spacing: 8) {
-                Image(systemName: "wind").foregroundStyle(.secondary)
-                Slider(value: Binding(get: { Double(s.wind) }, set: { s.wind = Int($0.rounded()) }),
-                       in: -2...2, step: 1)
-                Text(windTitle)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .frame(width: 78, alignment: .trailing)
+            if s.weatherCity.isEmpty {
+                Picker("", selection: $s.intensity) {
+                    ForEach(Intensity.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
+
+                HStack(spacing: 8) {
+                    Image(systemName: "wind").foregroundStyle(.secondary)
+                    Slider(value: Binding(get: { Double(s.wind) }, set: { s.wind = Int($0.rounded()) }),
+                           in: -2...2, step: 1)
+                    Text(windTitle(s.wind))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(width: 84, alignment: .trailing)
+                }
+            } else {
+                weatherInfo
             }
 
             HStack {
-                Toggle("Копить сугробы", isOn: $s.accumulate)
+                Toggle(tr("Копить сугробы", "Pile up"), isOn: $s.accumulate)
                 Spacer()
-                Toggle("Пауза", isOn: $s.paused)
+                Toggle(tr("Пауза", "Pause"), isOn: $s.paused)
             }
             .toggleStyle(.switch)
             .controlSize(.small)
@@ -101,9 +160,27 @@ struct PanelView: View {
         .card()
     }
 
+    @ViewBuilder private var weatherInfo: some View {
+        if let w = s.weather, w.city.id == s.weatherCity {
+            VStack(alignment: .leading, spacing: 3) {
+                Label(w.summary, systemImage: w.snow == nil ? "cloud" : "cloud.snow")
+                    .font(.callout)
+                Text(w.snow.map { tr("Идёт снег: ", "Snowing: ") + $0.title.lowercased() + ", " + tr("ветер ", "wind ") + windTitle(w.wind) }
+                     ?? tr("Сейчас там снега нет — ждём", "No snow there right now — waiting"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text(tr("Загружаю погоду…", "Loading weather…")).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
     private var cursorCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            title("Курсор", "cursorarrow.motionlines")
+            title(tr("Курсор", "Cursor"), "cursorarrow.motionlines")
             Picker("", selection: $s.tool) {
                 ForEach(Tool.allCases, id: \.self) { Text($0.title).tag($0) }
             }
@@ -111,8 +188,10 @@ struct PanelView: View {
             .labelsHidden()
             .frame(maxWidth: .infinity)
             .disabled(!s.accumulate)
-            Text(s.accumulate ? "\(s.tool.hint). ⌥ + движение по снегу — снежок, три снежка — снеговик ☃︎"
-                              : "Сугробы выключены — трогать нечего")
+            Text(s.accumulate
+                 ? s.tool.hint + tr(". ⌥ + движение по снегу — снежок, три снежка — снеговик ☃︎",
+                                    ". ⌥ + move through snow — a snowball; stack three — a snowman ☃︎")
+                 : tr("Сугробы выключены — трогать нечего", "Piling is off — nothing to touch"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -120,9 +199,28 @@ struct PanelView: View {
         .card()
     }
 
+    private var tractorCard: some View {
+        HStack {
+            Text("🚜").font(.system(size: 22))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tr("Трактор", "Snowplow")).font(.subheadline.weight(.semibold))
+                Toggle(tr("Сам чистит сугробы", "Clears drifts by itself"), isOn: $s.autoTractor)
+                    .toggleStyle(.checkbox)
+                    .font(.caption)
+            }
+            Spacer()
+            Button(tr("Вызвать", "Call"), action: actions.callTractor)
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+        }
+        .card()
+    }
+
+    // MARK: - Вкладка «Украшения»
+
     private var garlandCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            title("Гирлянда", "sparkles")
+            title(tr("Гирлянда", "Garland"), "sparkles")
             Picker("", selection: $s.garland) {
                 ForEach(GarlandStyle.allCases, id: \.self) { Text($0.title).tag($0) }
             }
@@ -141,60 +239,136 @@ struct PanelView: View {
         .card()
     }
 
-    private var tractorCard: some View {
-        HStack {
-            Text("🚜").font(.system(size: 22))
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Трактор").font(.subheadline.weight(.semibold))
-                Toggle("Сам чистит сугробы", isOn: $s.autoTractor)
-                    .toggleStyle(.checkbox)
-                    .font(.caption)
+    private var iciclesCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                title(tr("Сосульки", "Icicles"), "drop.fill")
+                Spacer()
+                Toggle("", isOn: $s.icicles).toggleStyle(.switch).labelsHidden().controlSize(.small)
             }
-            Spacer()
-            Button("Вызвать", action: actions.callTractor)
-                .buttonStyle(.borderedProminent)
-                .tint(.orange)
+            if s.icicles {
+                Picker("", selection: $s.icicleWhere) {
+                    ForEach(IcicleWhere.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
+                Picker("", selection: $s.icicleSize) {
+                    ForEach(IcicleSize.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
+                Text(tr("Растут со временем, отламываются, если сдвинуть окно",
+                        "They grow over time and break off when you move a window"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .card()
     }
 
-    // MARK: - Подвал
+    private var santaCard: some View {
+        HStack {
+            Text("🛷").font(.system(size: 22))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tr("Дед Мороз", "Father Frost")).font(.subheadline.weight(.semibold))
+                Toggle(tr("Иногда пролетает", "Flies by now and then"), isOn: $s.santa)
+                    .toggleStyle(.checkbox)
+                    .font(.caption)
+            }
+            Spacer()
+            Button(tr("Сейчас", "Now"), action: actions.santa)
+        }
+        .card()
+    }
 
-    private var footer: some View {
+    private var newYearCard: some View {
+        HStack {
+            Text("🎆").font(.system(size: 22))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tr("Новый год", "New Year")).font(.subheadline.weight(.semibold))
+                Toggle(tr("Отсчёт и салют в полночь", "Countdown and fireworks at midnight"), isOn: $s.newYear)
+                    .toggleStyle(.checkbox)
+                    .font(.caption)
+            }
+            Spacer()
+            Button(tr("Салют!", "Fireworks!"), action: actions.fireworks)
+        }
+        .card()
+    }
+
+    // MARK: - Вкладка «Ещё»
+
+    private var musicCard: some View {
+        HStack {
+            Text("🎼").font(.system(size: 22))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tr("«К Элизе»", "“Für Elise”")).font(.subheadline.weight(.semibold))
+                Toggle(tr("Играть, когда слепили снеговика", "Play when a snowman is built"), isOn: $s.musicOnSnowman)
+                    .toggleStyle(.checkbox)
+                    .font(.caption)
+            }
+            Spacer()
+            Button(action: actions.playMusic) { Label(tr("Сыграть", "Play"), systemImage: "play.fill") }
+        }
+        .card()
+    }
+
+    private var meltCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                title(tr("Таяние", "Melting"), "thermometer.sun")
+                Spacer()
+                Toggle("", isOn: $s.melting).toggleStyle(.switch).labelsHidden().controlSize(.small)
+            }
+            Text(meltStatus)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .card()
+    }
+
+    private var systemCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: "dock.rectangle").foregroundStyle(.secondary)
                 Text(state.dockText).font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 switch state.dockAction {
-                case .grant: Button("Дать доступ", action: actions.dockAction).controlSize(.small)
-                case .relaunch: Button("Перезапустить", action: actions.dockAction).controlSize(.small)
+                case .grant: Button(tr("Дать доступ", "Grant access"), action: actions.dockAction).controlSize(.small)
+                case .relaunch: Button(tr("Перезапустить", "Relaunch"), action: actions.dockAction).controlSize(.small)
                 case .none: EmptyView()
                 }
             }
             HStack {
-                Toggle("Запускать при входе", isOn: Binding(get: { state.launchAtLogin },
-                                                            set: { actions.setLaunchAtLogin($0) }))
+                Toggle(tr("Запускать при входе", "Launch at login"),
+                       isOn: Binding(get: { state.launchAtLogin }, set: { actions.setLaunchAtLogin($0) }))
                     .toggleStyle(.checkbox)
                     .font(.caption)
                 Spacer()
                 Button(action: actions.checkForUpdates) {
-                    Label("Обновления", systemImage: "arrow.triangle.2.circlepath")
+                    Label(tr("Обновления", "Updates"), systemImage: "arrow.triangle.2.circlepath")
                 }
                 .controlSize(.small)
-                .help("Версия \(version). Проверить обновления")
             }
             HStack {
-                Button(action: actions.clearSnow) { Label("Очистить снег", systemImage: "trash") }
-                    .disabled(!s.enabled)
+                Picker("", selection: $s.language) {
+                    Text("Русский").tag("ru")
+                    Text("English").tag("en")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .controlSize(.small)
                 Spacer()
-                Button(action: actions.quit) { Label("Выйти", systemImage: "power") }
-                    .keyboardShortcut("q")
+                Text(tr("Версия ", "Version ") + version)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
-            .controlSize(.small)
         }
-        .padding(.horizontal, 4)
-        .padding(.top, 2)
+        .card()
     }
 
     // MARK: - Вспомогательное
@@ -203,13 +377,23 @@ struct PanelView: View {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
     }
 
-    private var windTitle: String {
-        switch s.wind {
-        case -2: return "← сильный"
-        case -1: return "← слабый"
-        case 1: return "слабый →"
-        case 2: return "сильный →"
-        default: return "штиль"
+    private var meltStatus: String {
+        let hot: String
+        switch ProcessInfo.processInfo.thermalState {
+        case .nominal: hot = tr("Mac холодный — снег не тает", "Your Mac is cool — snow isn't melting")
+        case .fair: hot = tr("Mac тёплый — снег понемногу тает", "Your Mac is warm — snow is slowly melting")
+        default: hot = tr("Mac горячий — снег быстро тает", "Your Mac is hot — snow is melting fast")
+        }
+        return hot + tr(". Ещё тает, когда в выбранном городе плюс.", ". It also melts when it's above zero in the chosen city.")
+    }
+
+    private func windTitle(_ w: Int) -> String {
+        switch w {
+        case -2: return tr("← сильный", "← strong")
+        case -1: return tr("← слабый", "← light")
+        case 1: return tr("слабый →", "light →")
+        case 2: return tr("сильный →", "strong →")
+        default: return tr("штиль", "calm")
         }
     }
 

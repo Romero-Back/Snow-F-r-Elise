@@ -15,6 +15,14 @@
   сбивает снежки. Вызывается из меню (⌘T) или сам, когда наметёт сугроб.
 - **Гирлянда** под строкой меню: разноцветная или тёплая белая; мерцание, бегущий огонь или ровный свет.
 - **Без сугробов** — переключатель «Копить сугробы»: снег просто падает сквозь экран и нигде не копится.
+- **Как за окном**: снег и ветер по реальной погоде в выбранном городе (Москва, Петербург,
+  Новосибирск, Якутск и ещё полтора десятка снежных городов; данные Open-Meteo).
+- **Сосульки** под строкой меню и под окнами — растут, тают, отламываются, если сдвинуть окно.
+- **Дед Мороз** на санях иногда пролетает по верху экрана и роняет снег.
+- **Новый год**: в 23:59:50 31 декабря — обратный отсчёт, поздравление и салют. Салют можно запустить и просто так.
+- **«К Элизе»**: музыкальная шкатулка играет начало пьесы Бетховена, когда вы слепили снеговика (или по кнопке).
+- **Таяние**: когда Mac греется или в выбранном городе плюс, сугробы тают, а с сосулек капает.
+- Интерфейс на русском и английском.
 - Снегопад: лёгкий, ровный, метель. Ветер влево/вправо. Автозапуск.
 - Все настройки — в панели по клику на ❄︎ в строке меню.
 - **Пауза** замораживает снег на экране, **«Выключить снег»** убирает его полностью
@@ -85,10 +93,11 @@ GitHub Actions соберёт приложение, подпишет его и �
 
 ## Автоматизация
 
-Вызвать трактор из скрипта или Shortcuts:
+Из скрипта или Shortcuts можно вызвать трактор (`tractor`), салют (`fireworks`), Деда Мороза (`santa`)
+или музыку (`music`):
 
 ```sh
-swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("app.snowfall.FurElise.tractor"), object: nil, userInfo: nil, deliverImmediately: true)'
+swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("app.snowfall.FurElise.santa"), object: nil, userInfo: nil, deliverImmediately: true)'
 ```
 
 ## Устройство
@@ -98,6 +107,12 @@ swift -e 'import Foundation; DistributedNotificationCenter.default().postNotific
 | `Sources/FurElise/main.swift` | Приложение, значок в строке меню, прозрачные окна-оверлеи на каждом экране |
 | `Sources/FurElise/Panel.swift` | Панель настроек на SwiftUI |
 | `Sources/FurElise/Garland.swift` | Гирлянда |
+| `Sources/FurElise/Icicles.swift` | Сосульки |
+| `Sources/FurElise/Sleigh.swift` | Дед Мороз на санях |
+| `Sources/FurElise/Fireworks.swift` | Салют |
+| `Sources/FurElise/MusicBox.swift` | Музыкальная шкатулка: синтез «К Элизе» |
+| `Sources/FurElise/Weather.swift` | Погода по городам (Open-Meteo) |
+| `Sources/FurElise/L10n.swift` | Русский / английский |
 | `Sources/FurElise/SnowScene.swift` | SpriteKit-сцена: снегопад, сугробы, курсор, снежки |
 | `Sources/FurElise/Model.swift` | Сугроб (карта высот по столбикам), частица, снежок |
 | `Sources/FurElise/WindowTracker.swift` | Границы окон через `CGWindowList` (без доступа к содержимому) |

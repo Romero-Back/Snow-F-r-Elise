@@ -96,6 +96,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let panelState = PanelState()
     private var subs: Set<AnyCancellable> = []
     private var outsideClickMonitor: Any?
+    private var clock: Timer?
+    private var newYearFired = false
+    private var nextSantaAt = Date().addingTimeInterval(.random(in: 120...300))
     /// Sparkle: раз в день сам проверяет ленту обновлений из Info.plist (SUFeedURL).
     private let updater = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil,
                                                        userDriverDelegate: nil)
@@ -108,10 +111,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(pollWindows),
                                                           name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
-        // Автоматизация: distributed notification «app.snowfall.FurElise.tractor» вызывает трактор.
-        DistributedNotificationCenter.default().addObserver(self, selector: #selector(callTractor),
-                                                            name: .init("app.snowfall.FurElise.tractor"), object: nil)
+        // Автоматизация (скрипты, Shortcuts): distributed notifications app.snowfall.FurElise.<действие>.
+        let dnc = DistributedNotificationCenter.default()
+        dnc.addObserver(self, selector: #selector(callTractor), name: .init("app.snowfall.FurElise.tractor"), object: nil)
+        dnc.addObserver(self, selector: #selector(automationFireworks), name: .init("app.snowfall.FurElise.fireworks"), object: nil)
+        dnc.addObserver(self, selector: #selector(automationSanta), name: .init("app.snowfall.FurElise.santa"), object: nil)
+        dnc.addObserver(self, selector: #selector(automationMusic), name: .init("app.snowfall.FurElise.music"), object: nil)
+        WeatherService.shared.start()
+        clock = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.everySecond() }
         if Settings.shared.enabled { start() }
+    }
+
+    /// Новогодний отсчёт и редкие пролёты Деда Мороза.
+    private func everySecond() {
+        let s = Settings.shared
+        guard s.enabled, !s.paused else { return }
+        let now = Date()
+        let c = Calendar.current.dateComponents([.month, .day, .hour, .minute, .second], from: now)
+        if s.newYear, c.month == 12, c.day == 31, c.hour == 23, c.minute == 59, let sec = c.second, sec >= 50, !newYearFired {
+            newYearFired = true
+            overlays.filter { !$0.away }.forEach { $0.scene.startCountdown(seconds: 60 - sec) }
+        }
+        if c.month == 1, c.day == 1, (c.hour ?? 0) >= 1 { newYearFired = false }
+
+        if s.santa, now >= nextSantaAt {
+            nextSantaAt = now.addingTimeInterval(.random(in: 360...900))
+            overlays.filter { !$0.away }.randomElement()?.scene.launchSleigh()
+        }
     }
 
     /// Создать окна снега и запустить опрос окон.
@@ -133,6 +159,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func buildOverlays() {
         overlays.forEach { $0.close() }
         overlays = NSScreen.screens.map { Overlay(screen: $0) }
+        for o in overlays {
+            o.scene.onSnowman = {
+                if Settings.shared.musicOnSnowman { MusicBox.shared.play() }
+            }
+        }
         pollWindows()
     }
 
@@ -188,6 +219,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 NSApp.activate(ignoringOtherApps: true)
                 self?.updater.checkForUpdates(nil)
             },
+            playMusic: { MusicBox.shared.play() },
+            fireworks: { [weak self] in
+                self?.popover.performClose(nil)
+                self?.overlays.forEach { $0.scene.launchFireworks(seconds: 15) }
+            },
+            santa: { [weak self] in
+                self?.popover.performClose(nil)
+                self?.overlays.filter { !$0.away }.first?.scene.launchSleigh()
+            },
             quit: { NSApp.terminate(nil) })
         let host = NSHostingController(rootView: PanelView(state: panelState, actions: actions))
         host.sizingOptions = .preferredContentSize
@@ -222,17 +262,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func refreshPanelState() {
         switch (DockTracker.hasAccess, DockTracker.status) {
         case (false, _):
-            panelState.dockText = "Снег на Dock: нужен доступ"
+            panelState.dockText = tr("Снег на Dock: нужен доступ", "Snow on Dock: needs access")
             panelState.dockAction = .grant
         case (true, .ok):
-            panelState.dockText = "Снег на Dock: работает ✓"
+            panelState.dockText = tr("Снег на Dock: работает ✓", "Snow on Dock: working ✓")
             panelState.dockAction = .none
         case (true, .hidden):
-            panelState.dockText = "Снег на Dock: Dock скрыт"
+            panelState.dockText = tr("Снег на Dock: Dock скрыт", "Snow on Dock: Dock is hidden")
             panelState.dockAction = .none
         case (true, _):
             // Доступ выдан, но API Dock ещё не отвечает — обычно помогает перезапуск.
-            panelState.dockText = "Снег на Dock: нужен перезапуск"
+            panelState.dockText = tr("Снег на Dock: нужен перезапуск", "Snow on Dock: relaunch needed")
             panelState.dockAction = .relaunch
         }
         panelState.launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -259,6 +299,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func updateIcon() {
         statusItem.button?.appearsDisabled = Settings.shared.paused || !Settings.shared.enabled
     }
+
+    @objc private func automationFireworks() { overlays.forEach { $0.scene.launchFireworks(seconds: 15) } }
+    @objc private func automationSanta() { overlays.filter { !$0.away }.first?.scene.launchSleigh() }
+    @objc private func automationMusic() { MusicBox.shared.play() }
 
     @objc private func callTractor() { overlays.forEach { $0.scene.callTractor() } }
 

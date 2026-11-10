@@ -20,7 +20,7 @@ final class Garland {
         NSColor(calibratedRed: 1.00, green: 0.35, blue: 0.80, alpha: 1),   // розовый
     ]
     private static let warm = NSColor(calibratedRed: 1.0, green: 0.80, blue: 0.48, alpha: 1)
-    private static let glowTexture = makeGlowTexture()
+    static let glowTexture = makeGlowTexture()
 
     init(width: CGFloat, topY: CGFloat, style: GarlandStyle) {
         let span: CGFloat = 120, sag: CGFloat = 16, perSpan = 4

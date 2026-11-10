@@ -6,9 +6,9 @@ enum Intensity: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .light: return "Лёгкий"
-        case .steady: return "Ровный"
-        case .blizzard: return "Метель"
+        case .light: return tr("Лёгкий", "Light")
+        case .steady: return tr("Ровный", "Steady")
+        case .blizzard: return tr("Метель", "Blizzard")
         }
     }
 
@@ -27,17 +27,17 @@ enum Tool: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .none: return "Ничего"
-        case .mitten: return "🧤 Варежка"
-        case .shovel: return "🪏 Лопата"
+        case .none: return tr("Ничего", "Nothing")
+        case .mitten: return tr("🧤 Варежка", "🧤 Mitten")
+        case .shovel: return tr("🪏 Лопата", "🪏 Shovel")
         }
     }
 
     var hint: String {
         switch self {
-        case .none: return "Курсор проходит мимо снега"
-        case .mitten: return "Курсор смахивает снег"
-        case .shovel: return "Касание убирает весь снег с окна"
+        case .none: return tr("Курсор проходит мимо снега", "The cursor passes through the snow")
+        case .mitten: return tr("Курсор смахивает снег", "The cursor brushes snow away")
+        case .shovel: return tr("Касание убирает весь снег с окна", "A touch clears all snow off a window")
         }
     }
 }
@@ -47,9 +47,9 @@ enum GarlandStyle: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .off: return "Выкл"
-        case .multicolor: return "Цветная"
-        case .warm: return "Тёплая"
+        case .off: return tr("Выкл", "Off")
+        case .multicolor: return tr("Цветная", "Colorful")
+        case .warm: return tr("Тёплая", "Warm")
         }
     }
 }
@@ -59,9 +59,32 @@ enum GarlandMode: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .twinkle: return "Мерцание"
-        case .chase: return "Бегущий огонь"
-        case .steady: return "Ровно"
+        case .twinkle: return tr("Мерцание", "Twinkle")
+        case .chase: return tr("Бегущий огонь", "Chase")
+        case .steady: return tr("Ровно", "Steady")
+        }
+    }
+}
+
+enum IcicleWhere: String, CaseIterable {
+    case menu, windows, both
+
+    var title: String {
+        switch self {
+        case .menu: return tr("Строка меню", "Menu bar")
+        case .windows: return tr("Окна", "Windows")
+        case .both: return tr("Везде", "Both")
+        }
+    }
+}
+
+enum IcicleSize: String, CaseIterable {
+    case small, large
+
+    var title: String {
+        switch self {
+        case .small: return tr("Маленькие", "Small")
+        case .large: return tr("Большие", "Large")
         }
     }
 }
@@ -84,6 +107,23 @@ final class Settings: ObservableObject {
     @Published var accumulate: Bool { didSet { d.set(accumulate, forKey: "accumulate") } }
     @Published var garland: GarlandStyle { didSet { d.set(garland.rawValue, forKey: "garland") } }
     @Published var garlandMode: GarlandMode { didSet { d.set(garlandMode.rawValue, forKey: "garlandMode") } }
+    /// id города из `Cities.all`; пусто — снегопад и ветер задаются вручную.
+    @Published var weatherCity: String { didSet { d.set(weatherCity, forKey: "weatherCity") } }
+    @Published var icicles: Bool { didSet { d.set(icicles, forKey: "icicles") } }
+    @Published var icicleWhere: IcicleWhere { didSet { d.set(icicleWhere.rawValue, forKey: "icicleWhere") } }
+    @Published var icicleSize: IcicleSize { didSet { d.set(icicleSize.rawValue, forKey: "icicleSize") } }
+    /// Дед Мороз иногда пролетает по верху экрана.
+    @Published var santa: Bool { didSet { d.set(santa, forKey: "santa") } }
+    /// Отсчёт и салют в полночь 31 декабря.
+    @Published var newYear: Bool { didSet { d.set(newYear, forKey: "newYear") } }
+    /// Снег тает, когда Mac горячий или за окном плюс.
+    @Published var melting: Bool { didSet { d.set(melting, forKey: "melting") } }
+    @Published var musicOnSnowman: Bool { didSet { d.set(musicOnSnowman, forKey: "musicOnSnowman") } }
+    /// «ru» или «en» — язык интерфейса (см. tr()).
+    @Published var language: String { didSet { d.set(language, forKey: "language") } }
+
+    /// Последняя загруженная погода (не сохраняется).
+    @Published var weather: WeatherNow?
 
     private init() {
         intensity = Intensity(rawValue: d.string(forKey: "intensity") ?? "") ?? .steady
@@ -95,5 +135,25 @@ final class Settings: ObservableObject {
         accumulate = d.object(forKey: "accumulate") as? Bool ?? true
         garland = GarlandStyle(rawValue: d.string(forKey: "garland") ?? "") ?? .off
         garlandMode = GarlandMode(rawValue: d.string(forKey: "garlandMode") ?? "") ?? .twinkle
+        weatherCity = d.string(forKey: "weatherCity") ?? ""
+        icicles = d.object(forKey: "icicles") as? Bool ?? false
+        icicleWhere = IcicleWhere(rawValue: d.string(forKey: "icicleWhere") ?? "") ?? .menu
+        icicleSize = IcicleSize(rawValue: d.string(forKey: "icicleSize") ?? "") ?? .small
+        santa = d.object(forKey: "santa") as? Bool ?? true
+        newYear = d.object(forKey: "newYear") as? Bool ?? true
+        melting = d.object(forKey: "melting") as? Bool ?? false
+        musicOnSnowman = d.object(forKey: "musicOnSnowman") as? Bool ?? true
+        language = d.string(forKey: "language") ?? "ru"
     }
+
+    /// Погода выбранного города, если режим «как за окном» включён и она уже загружена.
+    var activeWeather: WeatherNow? { weatherCity.isEmpty ? nil : weather }
+
+    /// Сила снегопада с учётом погоды. nil — снег сейчас не идёт.
+    var effectiveIntensity: Intensity? {
+        if let w = activeWeather { return w.snow }
+        return intensity
+    }
+
+    var effectiveWind: Int { activeWeather?.wind ?? wind }
 }

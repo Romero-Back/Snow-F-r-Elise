@@ -24,6 +24,14 @@ final class SnowScene: SKScene {
     private let flakeLayer = SKNode()
     private let tractorLayer = SKNode()
     private let garlandLayer = SKNode()
+    private let icicles = IcicleLayer()
+    private let fireworks = Fireworks()
+    private var sleigh: Sleigh?
+    private var meltAcc: CGFloat = 0
+    private var countdownEnd: TimeInterval?
+    private let countdownLabel = SKLabelNode(fontNamed: "AvenirNext-Heavy")
+    /// Слепили снеговика (три снежка друг на друге).
+    var onSnowman: (() -> Void)?
 
     private var lastTime: TimeInterval = 0
     private var spawnAcc: CGFloat = 0
@@ -46,6 +54,16 @@ final class SnowScene: SKScene {
         flakeLayer.zPosition = 2
         tractorLayer.zPosition = 1.5
         garlandLayer.zPosition = 1.8
+        icicles.node.zPosition = 1.7
+        fireworks.node.zPosition = 0.5
+        countdownLabel.zPosition = 3
+        countdownLabel.fontSize = 200
+        countdownLabel.fontColor = .white
+        countdownLabel.verticalAlignmentMode = .center
+        countdownLabel.isHidden = true
+        addChild(fireworks.node)
+        addChild(icicles.node)
+        addChild(countdownLabel)
         addChild(tractorLayer)
         addChild(garlandLayer)
         addChild(ledgeLayer)
@@ -82,7 +100,27 @@ final class SnowScene: SKScene {
         tractorLayer.addChild(tr.node)
     }
 
+    /// Салют на `seconds` секунд.
+    func launchFireworks(seconds: CGFloat) { fireworks.start(duration: seconds) }
+
+    /// Новогодний отсчёт: через `seconds` секунд — поздравление и салют.
+    func startCountdown(seconds: Int) {
+        countdownEnd = lastTime + TimeInterval(seconds)
+    }
+
+    /// Дед Мороз пролетает по верху экрана.
+    func launchSleigh() {
+        guard sleigh == nil else { return }
+        let dir: CGFloat = Bool.random() ? 1 : -1
+        let y = size.height - menuBarInset - .random(in: 90...170)
+        let sl = Sleigh(dir: dir, x: dir > 0 ? -Sleigh.length : size.width + Sleigh.length, y: y)
+        sl.node.zPosition = 1.9
+        addChild(sl.node)
+        sleigh = sl
+    }
+
     func updateWindows(_ wins: [WinInfo]) {
+        syncIcicles(wins)
         var seen: Set<Int> = [-1]
         for (idx, w) in wins.enumerated() {
             let top = w.frame.maxY
@@ -132,6 +170,8 @@ final class SnowScene: SKScene {
         stepTractor(dt, currentTime)
         syncAccumulation()
         syncGarland(currentTime)
+        stepDecorations(dt)
+        stepCountdown(currentTime)
         refreshLedges(currentTime)
         adaptFrameRate(currentTime)
     }
@@ -139,9 +179,10 @@ final class SnowScene: SKScene {
     /// Пока снег просто падает, хватает 30 fps (полноэкранный прозрачный слой дорого композитить).
     /// Когда снег трогают, катают снежки или он осыпается, — 60 fps для плавности.
     private func adaptFrameRate(_ t: TimeInterval) {
-        let active = cursorNearSnow || heldBall != nil || tractor != nil
+        let active = cursorNearSnow || heldBall != nil || tractor != nil || sleigh != nil
+            || fireworks.isActive || countdownEnd != nil
             || balls.contains { $0.state == .falling }
-            || particles.contains { $0.ballistic }
+            || particles.contains { $0.ballistic && $0.volume > 0 }
         if active { busyUntil = t + 0.8 }
         let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
         let fps = (t < busyUntil && !lowPower) ? 60 : 30
@@ -149,7 +190,8 @@ final class SnowScene: SKScene {
     }
 
     private func currentRate() -> CGFloat {
-        var rate = Settings.shared.intensity.rate * size.width / 1000
+        guard let intensity = Settings.shared.effectiveIntensity else { return 0 }
+        var rate = intensity.rate * size.width / 1000
         let pi = ProcessInfo.processInfo
         if pi.isLowPowerModeEnabled || pi.thermalState == .serious || pi.thermalState == .critical {
             rate *= 0.4
@@ -168,11 +210,14 @@ final class SnowScene: SKScene {
 
     private func spawnFlake(y: CGFloat) {
         let s = Settings.shared
-        let pad = abs(CGFloat(s.wind)) * 250
+        let pad = abs(CGFloat(s.effectiveWind)) * 250
+        spawnFlake(at: CGPoint(x: .random(in: -pad...(size.width + pad)), y: y))
+    }
+
+    private func spawnFlake(at p: CGPoint) {
         let sz = 1.6 + pow(CGFloat.random(in: 0...1), 2) * 3.8
-        let speed = (22 + sz * 11) * (s.intensity == .blizzard ? 1.5 : 1)
-        addParticle(pos: CGPoint(x: .random(in: -pad...(size.width + pad)), y: y),
-                    vel: CGVector(dx: 0, dy: -speed), size: sz, volume: sz * sz * 0.22, ballistic: false)
+        let speed = (22 + sz * 11) * (Settings.shared.effectiveIntensity == .blizzard ? 1.5 : 1)
+        addParticle(pos: p, vel: CGVector(dx: 0, dy: -speed), size: sz, volume: sz * sz * 0.22, ballistic: false)
     }
 
     @discardableResult
@@ -196,7 +241,7 @@ final class SnowScene: SKScene {
     }
 
     private func stepParticles(_ dt: CGFloat) {
-        let wind = CGFloat(Settings.shared.wind) * 40
+        let wind = CGFloat(Settings.shared.effectiveWind) * 40
         var alive: [Particle] = []
         alive.reserveCapacity(particles.count)
         for p in particles {
@@ -496,6 +541,147 @@ final class SnowScene: SKScene {
         garland?.update(t: CGFloat(t), mode: Settings.shared.garlandMode)
     }
 
+    // MARK: - Украшения, таяние, Новый год
+
+    private func syncIcicles(_ wins: [WinInfo]) {
+        let s = Settings.shared
+        guard s.icicles else {
+            if !icicles.isEmpty { icicles.removeAll() }
+            return
+        }
+        var specs: [IcicleRailSpec] = []
+        if s.icicleWhere != .windows, menuBarInset > 0 {
+            specs.append(IcicleRailSpec(id: -10, x0: 0, y: size.height - menuBarInset, width: size.width,
+                                        covered: { _ in false }))
+        }
+        if s.icicleWhere != .menu {
+            let sf = screenFrame
+            for (idx, w) in wins.enumerated() where w.id >= 0 {
+                let bottom = w.frame.minY
+                guard bottom > sf.minY + 50, bottom < sf.maxY - menuBarInset - 10,
+                      w.frame.maxX > sf.minX, w.frame.minX < sf.maxX else { continue }
+                let front = wins[0..<idx]
+                let gy = bottom - 3
+                specs.append(IcicleRailSpec(id: w.id, x0: w.frame.minX - sf.minX, y: bottom - sf.minY,
+                                            width: w.frame.width, covered: { lx in
+                    let gx = lx + sf.minX
+                    if gx < sf.minX || gx > sf.maxX { return true }
+                    return front.contains { $0.frame.contains(CGPoint(x: gx, y: gy)) }
+                }))
+            }
+        }
+        icicles.sync(specs, size: s.icicleSize)
+    }
+
+    /// Скорость таяния, pt высоты в секунду. 0 — не тает.
+    private func meltRate() -> CGFloat {
+        let s = Settings.shared
+        guard s.melting else { return 0 }
+        var rate: CGFloat
+        switch ProcessInfo.processInfo.thermalState {
+        case .fair: rate = 0.015
+        case .serious: rate = 0.05
+        case .critical: rate = 0.1
+        default: rate = 0
+        }
+        if let w = s.activeWeather, w.temp > 0.5 {
+            rate = max(rate, CGFloat(min(w.temp, 10)) * 0.006)
+        }
+        return rate
+    }
+
+    private func drip(at p: CGPoint) {
+        addParticle(pos: p, vel: CGVector(dx: 0, dy: -.random(in: 20...60)), size: .random(in: 2...3),
+                    volume: 0, ballistic: true, life: .random(in: 1.0...1.6),
+                    tint: NSColor(calibratedRed: 0.55, green: 0.78, blue: 1, alpha: 1))
+    }
+
+    private func stepDecorations(_ dt: CGFloat) {
+        let melt = meltRate()
+        icicles.update(dt: dt, melt: melt) { drip(at: $0) }
+
+        // Таяние сугробов — раз в полсекунды, с капелью с краёв.
+        if melt > 0 {
+            meltAcc += dt
+            if meltAcc >= 0.5 {
+                for l in ledges.values {
+                    var any = false
+                    for i in 0..<l.n where l.h[i] > 0 {
+                        l.h[i] = max(0, l.h[i] - melt * meltAcc)
+                        any = true
+                    }
+                    guard any else { continue }
+                    l.dirty = true
+                    if !l.isGround, CGFloat.random(in: 0...1) < melt * 20 {
+                        let c = Int.random(in: 0..<l.n)
+                        if l.visible[c], l.h[c] > 0.5 { drip(at: CGPoint(x: l.colX(c), y: l.y - 1)) }
+                    }
+                }
+                meltAcc = 0
+            }
+        }
+
+        fireworks.update(dt: dt, size: size)
+
+        if let sl = sleigh {
+            sl.step(dt)
+            sl.trailAcc += dt
+            if sl.trailAcc > 0.035 {
+                sl.trailAcc = 0
+                addParticle(pos: sl.trailPoint, vel: CGVector(dx: -sl.dir * .random(in: 10...40), dy: -.random(in: 5...25)),
+                            size: .random(in: 2.5...4.5), volume: 0, ballistic: false, life: .random(in: 0.6...1.1),
+                            tint: NSColor(calibratedRed: 1, green: 0.85, blue: 0.35, alpha: 1))
+            }
+            sl.snowAcc += dt
+            if sl.snowAcc > 0.12 {
+                sl.snowAcc = 0
+                spawnFlake(at: CGPoint(x: sl.bellyPoint.x + .random(in: -40...40), y: sl.bellyPoint.y))
+            }
+            if (sl.dir > 0 && sl.x > size.width + Sleigh.length) || (sl.dir < 0 && sl.x < -Sleigh.length) {
+                sl.node.removeFromParent()
+                sleigh = nil
+            }
+        }
+    }
+
+    private func stepCountdown(_ t: TimeInterval) {
+        guard let end = countdownEnd else { return }
+        let left = end - t
+        if left > 0 {
+            let n = Int(ceil(left))
+            let frac = CGFloat(left - floor(left))   // 1 → 0 за каждую секунду
+            countdownLabel.isHidden = false
+            countdownLabel.text = "\(n)"
+            countdownLabel.position = CGPoint(x: size.width / 2, y: size.height / 2)
+            countdownLabel.setScale(1 + 0.35 * frac)
+            countdownLabel.alpha = 0.25 + 0.75 * frac
+        } else {
+            countdownEnd = nil
+            countdownLabel.isHidden = true
+            showGreeting()
+            fireworks.start(duration: 90)
+        }
+    }
+
+    private func showGreeting() {
+        let label = SKLabelNode(fontNamed: "SnellRoundhand-Bold")
+        label.text = tr("С Новым годом!", "Happy New Year!")
+        label.fontSize = min(120, size.width / 9)
+        label.fontColor = NSColor(calibratedRed: 1, green: 0.85, blue: 0.35, alpha: 1)
+        label.verticalAlignmentMode = .center
+        label.position = CGPoint(x: size.width / 2, y: size.height * 0.62)
+        label.zPosition = 3
+        label.alpha = 0
+        label.setScale(0.8)
+        addChild(label)
+        label.run(.sequence([
+            .group([.fadeIn(withDuration: 1.2), .scale(to: 1, duration: 1.2)]),
+            .wait(forDuration: 10),
+            .fadeOut(withDuration: 2),
+            .removeFromParent(),
+        ]))
+    }
+
     // MARK: - Трактор
 
     private func stepTractor(_ dt: CGFloat, _ t: TimeInterval) {
@@ -582,7 +768,9 @@ final class SnowScene: SKScene {
                 && b.supportBall?.state == .resting
                 && b.supportBall?.supportBall?.state == .resting
                 && !balls.contains { $0.state == .resting && $0.supportBall === b }
+            let had = b.hasFace
             b.setFace(want)
+            if want && !had { onSnowman?() }
         }
     }
 

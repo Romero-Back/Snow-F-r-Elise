@@ -184,6 +184,8 @@ final class Snowball {
     }
 
     /// Лицо снеговика — у верхнего шара в стопке из трёх.
+    var hasFace: Bool { face != nil }
+
     func setFace(_ want: Bool) {
         if want, face == nil {
             let r = self.r
