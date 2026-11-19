@@ -87,7 +87,9 @@ final class Overlay {
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var statusItem: NSStatusItem!
+    private lazy var decorStudio = DecorStudio()
     private var overlays: [Overlay] = []
+    private var giftClickMonitor: Any?
     private var timer: Timer?
     private var tick = 0
     private var dockFrame: CGRect?
@@ -100,10 +102,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var newYearFired = false
     private var nextSantaAt = Date().addingTimeInterval(.random(in: 120...300))
     /// Sparkle: раз в день сам проверяет ленту обновлений из Info.plist (SUFeedURL).
-    private let updater = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil,
-                                                       userDriverDelegate: nil)
+    private let updater = UpdateCheck()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        updater.start()
         setupStatusItem()
         setupPopover()
         observeSettings()
@@ -145,6 +147,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     /// Создать окна снега и запустить опрос окон.
     private func start() {
         buildOverlays()
+        giftClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            guard let self, !Settings.shared.paused else { return }
+            let point = event.window?.convertPoint(toScreen: event.locationInWindow) ?? event.locationInWindow
+            for overlay in self.overlays where !overlay.away && overlay.scene.screenFrame.contains(point) {
+                overlay.scene.holidayDecor.click(at: point, screen: overlay.scene.screenFrame)
+            }
+        }
         timer?.invalidate()
         timer = Timer.scheduledTimer(timeInterval: 0.1, target: self, selector: #selector(pollWindows),
                                      userInfo: nil, repeats: true)
@@ -152,6 +161,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     /// Полное выключение: окна и сцены уничтожаются, таймер останавливается — ни CPU, ни GPU.
     private func stop() {
+        if let monitor = giftClickMonitor { NSEvent.removeMonitor(monitor); giftClickMonitor = nil }
+        decorStudio.updateHandles(windows: [], visibleScreens: [])
         timer?.invalidate()
         timer = nil
         overlays.forEach { $0.close() }
@@ -180,7 +191,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         for o in overlays {
             o.setAway(fullscreen.contains("Main") || o.displayUUID.map(fullscreen.contains) == true)
         }
-        guard !Settings.shared.paused else { return }
+        guard !Settings.shared.paused, overlays.contains(where: { !$0.away }) else {
+            decorStudio.updateHandles(windows: [], visibleScreens: [])
+            return
+        }
         var wins = WindowTracker.fetch()
 
         // Границы Dock меняются редко, а запрос через Accessibility дороже — раз в 0.3 с.
@@ -195,6 +209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             wins.insert(WinInfo(id: -2, frame: ext), at: 0)
         }
 
+        decorStudio.updateHandles(windows: wins, visibleScreens: overlays.filter { !$0.away }.map { $0.scene.screenFrame })
         // Пока экран в полноэкранном режиме, окна обычного рабочего стола не видны —
         // сцену не обновляем, иначе весь снег с них осыпался бы.
         for o in overlays where !o.away { o.scene.updateWindows(wins) }
@@ -213,6 +228,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func setupPopover() {
         let actions = PanelActions(
+            openDecorStudio: { [weak self] in
+                self?.popover.performClose(nil)
+                self?.decorStudio.show()
+            },
             callTractor: { [weak self] in self?.callTractor() },
             clearSnow: { [weak self] in self?.overlays.forEach { $0.scene.clearAll() } },
             dockAction: { [weak self] in self?.dockAction() },
@@ -220,7 +239,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             checkForUpdates: { [weak self] in
                 self?.popover.performClose(nil)
                 NSApp.activate(ignoringOtherApps: true)
-                self?.updater.checkForUpdates(nil)
+                self?.updater.check()
             },
             playMusic: { MusicBox.shared.play() },
             fireworks: { [weak self] in

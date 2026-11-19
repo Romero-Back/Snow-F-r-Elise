@@ -47,6 +47,7 @@ final class Sleigh {
 
     // MARK: - Рисунок
 
+    @discardableResult
     private func shape(_ path: CGPath, fill: NSColor?, stroke: NSColor? = nil, width: CGFloat = 1, z: CGFloat) -> SKShapeNode {
         let n = SKShapeNode(path: path)
         n.fillColor = fill ?? .clear
