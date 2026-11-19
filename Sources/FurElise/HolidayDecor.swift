@@ -160,7 +160,7 @@ final class HolidayDecor {
     private func emitHeart(from gift: CGRect) {
         let heart = symbol("♥", at: CGPoint(x: gift.midX, y: gift.maxY), size: 23, in: node)
         heart.zPosition = 20
-        heart.fontColor = .systemPink
+        heart.fontColor = NSColor(srgbRed: 0.84, green: 0.37, blue: 0.32, alpha: 1)
         heart.run(.sequence([.moveBy(x: -5, y: 22, duration: 0.45),
                              .group([.moveBy(x: 13, y: 33, duration: 1.1), .fadeOut(withDuration: 1.1)]),
                              .removeFromParent()]))
@@ -180,13 +180,13 @@ final class HolidayDecor {
         message.zPosition = 21
         message.name = "compliment"
         message.fontName = "HelveticaNeue-Medium"
-        message.fontColor = .white
+        message.fontColor = NSColor(srgbRed: 1, green: 0.96, blue: 0.89, alpha: 1)
         let bounds = message.frame.insetBy(dx: -12, dy: -7)
         message.position = CGPoint(x: min(max(gift.midX, -bounds.minX), screen.width - bounds.maxX),
                                    y: min(max(gift.maxY + 28, -bounds.minY), screen.height - bounds.maxY))
         let plate = SKShapeNode(rect: bounds, cornerRadius: 10)
-        plate.fillColor = NSColor(calibratedRed: 0.25, green: 0.07, blue: 0.21, alpha: 0.96)
-        plate.strokeColor = .systemPink
+        plate.fillColor = NSColor(srgbRed: 0.10, green: 0.16, blue: 0.15, alpha: 0.96)
+        plate.strokeColor = NSColor(srgbRed: 0.87, green: 0.67, blue: 0.45, alpha: 1)
         plate.zPosition = -1
         message.addChild(plate)
         message.run(.sequence([.wait(forDuration: 3), .fadeOut(withDuration: 0.5), .removeFromParent()]))

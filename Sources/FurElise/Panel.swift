@@ -54,15 +54,11 @@ struct PanelView: View {
                     cursorCard
                     tractorCard
                 case .decor:
-                    ScrollView {
-                        VStack(spacing: 10) {
-                            holidayCard
-                            iciclesCard
-                            frostCard
-                            extrasCard
-                        }
+                    ViewThatFits(in: .vertical) {
+                        decorCards.fixedSize(horizontal: false, vertical: true)
+                        ScrollView { decorCards }
                     }
-                    .frame(height: 435)
+                    .frame(maxHeight: 435)
                 case .more:
                     soundCard
                     musicCard
@@ -81,9 +77,10 @@ struct PanelView: View {
         }
         .padding(14)
         .frame(width: 350)
+        .tint(Color(nsColor: WinterPalette.accent))
         .background(
-            LinearGradient(colors: [Color(red: 0.35, green: 0.55, blue: 0.95).opacity(0.18), .clear],
-                           startPoint: .top, endPoint: .center)
+            LinearGradient(colors: [Color(nsColor: WinterPalette.background), Color(nsColor: WinterPalette.gradientEnd)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
         )
     }
 
@@ -91,15 +88,15 @@ struct PanelView: View {
 
     private var header: some View {
         HStack(alignment: .center) {
-            Image(systemName: "snowflake")
-                .font(.system(size: 26, weight: .light))
-                .foregroundStyle(LinearGradient(colors: [.white, Color(red: 0.55, green: 0.75, blue: 1)],
-                                                startPoint: .top, endPoint: .bottom))
-                .shadow(color: .blue.opacity(0.4), radius: 4)
+            Image(nsImage: DecorKind.eveningLamp.artwork)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 43, height: 43)
+                .accessibilityHidden(true)
             Text("Für Elise")
-                .font(.custom("SnellRoundhand-Bold", size: 30))
+                .font(.custom("Georgia", size: 29))
             Spacer()
-            Toggle("", isOn: $s.enabled)
+            Toggle(tr("Снег", "Snow"), isOn: $s.enabled)
                 .toggleStyle(.switch)
                 .labelsHidden()
                 .help(s.enabled ? tr("Выключить снег полностью", "Turn snow off completely")
@@ -264,10 +261,31 @@ struct PanelView: View {
         return digest.map { String(format: "%02x", $0) }.joined() == expectedDigest
     }
 
+    private var decorCards: some View {
+        VStack(spacing: 10) {
+            holidayCard
+            iciclesCard
+            frostCard
+            extrasCard
+        }
+    }
+
     private var holidayCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            title(tr("Мастерская украшений", "Decoration studio"), "sparkles")
-            Button(tr("Открыть мастерскую…", "Open decoration studio…"), action: actions.openDecorStudio)
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(tr("Мастерская", "Decoration studio"))
+                        .font(.custom("Georgia", size: 20))
+                    Button(tr("Открыть мастерскую…", "Open studio…"), action: actions.openDecorStudio)
+                        .buttonStyle(.borderedProminent)
+                }
+                Spacer(minLength: 0)
+                Image(nsImage: DecorKind.eveningCabin.artwork)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 66, height: 62)
+                    .accessibilityHidden(true)
+            }
             if s.giftUnlocked {
                 Button(tr("Закрыть сюрприз", "Lock surprise")) { s.giftUnlocked = false }
             } else {
@@ -345,18 +363,24 @@ struct PanelView: View {
     private var extrasCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("🐦")
+                Image(systemName: "bird")
+                    .foregroundStyle(Color(nsColor: WinterPalette.accent))
+                    .accessibilityHidden(true)
                 Toggle(tr("Снегири", "Bullfinches"), isOn: $s.birds).toggleStyle(.checkbox)
                 Spacer()
             }
             HStack {
-                Text("🛷")
+                Image(systemName: "snowflake")
+                    .foregroundStyle(Color(nsColor: WinterPalette.accent))
+                    .accessibilityHidden(true)
                 Toggle(tr("Дед Мороз иногда пролетает", "Father Frost flies by"), isOn: $s.santa).toggleStyle(.checkbox)
                 Spacer()
                 Button(tr("Сейчас", "Now"), action: actions.santa).controlSize(.small)
             }
             HStack {
-                Text("🎆")
+                Image(systemName: "sparkles")
+                    .foregroundStyle(Color(nsColor: WinterPalette.accent))
+                    .accessibilityHidden(true)
                 Toggle(tr("Салют в Новый год", "New Year fireworks"), isOn: $s.newYear).toggleStyle(.checkbox)
                 Spacer()
                 Button(tr("Салют!", "Fireworks!"), action: actions.fireworks).controlSize(.small)
@@ -503,9 +527,9 @@ private struct CardModifier: ViewModifier {
         content
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.background.opacity(0.55)))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08)))
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(nsColor: WinterPalette.panel)))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color(nsColor: WinterPalette.line)))
     }
 }
 

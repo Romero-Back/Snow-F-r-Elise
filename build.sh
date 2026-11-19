@@ -24,6 +24,7 @@ lipo -create "${bins[@]}" -output "$APP/Contents/MacOS/$EXEC"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp Resources/decor/catalog.png "$APP/Contents/Resources/decor-catalog.png"
+cp Resources/decor/winter-evening*.png "$APP/Contents/Resources/"
 /usr/libexec/PlistBuddy -c "Set CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
 # Sparkle сравнивает CFBundleVersion — держим её равной версии.
 /usr/libexec/PlistBuddy -c "Set CFBundleVersion $VERSION" "$APP/Contents/Info.plist"

@@ -15,16 +15,36 @@ enum DecorKind: String, CaseIterable, Codable {
     case stocking, cap, scarf, bow, cookie
     case peppermint, skis, jingle, moon, icicle
 
+    case eveningLamp, eveningCabin, eveningRobin, eveningLetters, eveningCocoa
+    case eveningSkates, eveningFir, eveningMoon, eveningBauble
+    case eveningWindow, eveningSleepingFox, eveningMittens
+    case eveningStove, eveningOrangeSprig, eveningVillageGlobe
+
     case picture, pairedHouse
     case tree, fireplace, lights, wave, doubleLights, curtain
 
     var isGarland: Bool { self == .lights || self == .wave || self == .doubleLights || self == .curtain }
     var isAnimated: Bool { isGarland || self == .tree || self == .fireplace }
-    private static var atlasKinds: [Self] { allCases.filter { !$0.isAnimated && $0 != .picture && $0 != .pairedHouse } }
+    private static var atlasKinds: [Self] { allCases.filter { !$0.isAnimated && $0 != .picture && $0 != .pairedHouse && !WinterEvening.catalog.contains($0) } }
     static var catalog: [Self] { [.pairedHouse, .tree, .fireplace, .lights, .wave, .doubleLights, .curtain] + atlasKinds }
 
     var title: String {
         switch self {
+        case .eveningLamp: return tr("Фонарь", "Enamel lantern")
+        case .eveningCabin: return tr("Домик в лесу", "Woodland cabin")
+        case .eveningRobin: return tr("Малиновка", "Robin")
+        case .eveningLetters: return tr("Письма с лентой", "Ribbon-tied letters")
+        case .eveningCocoa: return tr("Кружка какао", "Mug of cocoa")
+        case .eveningSkates: return tr("Винтажные коньки", "Vintage skates")
+        case .eveningFir: return tr("Лесная ёлка", "Woodland fir")
+        case .eveningMoon: return tr("Латунный месяц", "Brass crescent")
+        case .eveningBauble: return tr("Шар со звездой", "Star bauble")
+        case .eveningWindow: return tr("Окно со свечой", "Candlelit window")
+        case .eveningSleepingFox: return tr("Спящая лиса", "Sleeping fox")
+        case .eveningMittens: return tr("Вязаные варежки", "Knitted mittens")
+        case .eveningStove: return tr("Дровяная печка", "Wood stove")
+        case .eveningOrangeSprig: return tr("Хвоя с апельсином", "Orange and spruce")
+        case .eveningVillageGlobe: return tr("Деревня в шаре", "Village snow globe")
         case .picture: return tr("Своя картинка", "Custom picture")
         case .pairedHouse: return tr("Парные домики", "Paired houses")
         case .curtain: return tr("Световая штора", "Fairy light curtain")
@@ -87,10 +107,13 @@ enum DecorKind: String, CaseIterable, Codable {
     }
 
     var isGift: Bool {
-        [.gift, .pinkGift, .blueGift, .kraftGift].contains(self)
+        [.gift, .pinkGift, .blueGift, .kraftGift, .eveningLetters].contains(self)
     }
 
-    var artwork: NSImage { Self.images[self == .pairedHouse ? .house : self] ?? NSImage(size: NSSize(width: 100, height: 100)) }
+    var artwork: NSImage {
+        WinterEvening.artwork[self] ?? Self.images[self == .pairedHouse ? .house : self] ??
+            NSImage(size: NSSize(width: 100, height: 100))
+    }
 
     private static let images: [DecorKind: NSImage] = {
         guard let url = Bundle.main.url(forResource: "decor-catalog", withExtension: "png"),
@@ -287,9 +310,14 @@ final class DecorStore {
 }
 
 final class DecorStudio {
+    private enum Collection: Int {
+        case winterEvening, classic, pictures
+    }
+
+    private var collection = Collection.winterEvening
     private weak var placedScroll: NSScrollView?
     private weak var catalogScroll: NSScrollView?
-    private var selectedKind = DecorKind.tree
+    private var selectedKind = DecorKind.eveningLamp
     private var selectedPicture: UUID?
     private var selectedID: UUID?
     private var styles: [DecorKind: DecorStyle] = [:]
@@ -301,7 +329,7 @@ final class DecorStudio {
     }
 
     private var attachToWindow = false
-    private let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 864, height: 613),
+    private let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 864, height: 624),
                                 styleMask: [.titled, .closable, .utilityWindow], backing: .buffered, defer: false)
     private let preview = NSPanel(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
 
@@ -347,10 +375,23 @@ final class DecorStudio {
         let content = PictureDropView()
         content.registerForDraggedTypes([.fileURL])
         content.onImport = { [weak self] in self?.importPictures($0) }
-        let add = NSButton(title: tr("Свои картинки…", "Import pictures…"), target: self, action: #selector(choosePictures))
-        add.frame = NSRect(x: 330, y: 545, width: 150, height: 28)
+        content.addSubview(StudioBackdrop(frame: NSRect(x: 0, y: 0, width: 864, height: 624)))
+
+        let title = NSTextField(labelWithString: tr("Мастерская", "Decoration studio"))
+        title.font = WinterPalette.heading(32)
+        title.frame = NSRect(x: 24, y: 570, width: 440, height: 40)
+        content.addSubview(title)
+
+        let instructions = NSTextField(labelWithString: tr("Перетащи украшение на рабочий стол", "Drag a decoration onto the desktop"))
+        instructions.font = .systemFont(ofSize: 13)
+        instructions.textColor = WinterPalette.secondary
+        instructions.frame = NSRect(x: 26, y: 549, width: 430, height: 18)
+        content.addSubview(instructions)
+
+        let add = NSButton(title: tr("Импорт PNG или JPEG…", "Import PNG or JPEG…"), target: self, action: #selector(choosePictures))
+        add.frame = NSRect(x: 484, y: 571, width: 186, height: 30)
         content.addSubview(add)
-        let scenes = NSPopUpButton(frame: NSRect(x: 494, y: 575, width: 354, height: 30), pullsDown: true)
+        let scenes = NSPopUpButton(frame: NSRect(x: 677, y: 571, width: 161, height: 30), pullsDown: true)
         scenes.addItem(withTitle: tr("Сцены", "Scenes"))
         scenes.addItem(withTitle: tr("Сохранить текущую сцену…", "Save current scene…"))
         scenes.lastItem?.target = self
@@ -359,30 +400,51 @@ final class DecorStudio {
             scenes.menu?.addItem(withTitle: scene.name, action: #selector(loadScene(_:)), keyEquivalent: "").target = self
         }
         content.addSubview(scenes)
-        let title = NSTextField(labelWithString: tr("Перетащи украшение на экран", "Drag a decoration onto the screen"))
-        title.font = .systemFont(ofSize: 16, weight: .semibold)
-        title.frame = NSRect(x: 16, y: 579, width: 352, height: 23)
-        content.addSubview(title)
+
+        let collections = NSSegmentedControl(labels: [
+            tr("Зимний вечер", "Winter Evening"), tr("Классика", "Classic"), tr("Свои картинки", "My pictures")
+        ], trackingMode: .selectOne, target: self, action: #selector(changeCollection(_:)))
+        collections.selectedSegment = collection.rawValue
+        collections.frame = NSRect(x: 24, y: 500, width: 440, height: 30)
+        content.addSubview(collections)
 
         let attach = NSButton(checkboxWithTitle: tr("Крепить к окну под курсором", "Attach to window under pointer"),
                               target: self, action: #selector(toggleAttachment(_:)))
         attach.state = attachToWindow ? .on : .off
         attach.toolTip = tr("Отпусти над окном, чтобы украшение двигалось вместе с ним.",
                             "Drop onto a window to move the decoration with it.")
-        attach.frame = NSRect(x: 16, y: 547, width: 352, height: 24)
+        attach.frame = NSRect(x: 512, y: 34, width: 312, height: 24)
         content.addSubview(attach)
 
-        let catalog = NSScrollView(frame: NSRect(x: 16, y: 88, width: 464, height: 454))
-        catalog.hasVerticalScroller = true
-        let columns = 4
-        let entries: [(DecorKind, UUID?)] = DecorLibrary.shared.pictures.map { (.picture, $0.id) } + DecorKind.catalog.map { ($0, nil) }
+        let catalog = NSScrollView(frame: NSRect(x: 24, y: 102, width: 442, height: 384))
+        catalog.scrollerStyle = .overlay
+        catalog.drawsBackground = false
+        let columns = 3
+        let entries: [(DecorKind, UUID?)]
+        switch collection {
+        case .winterEvening: entries = WinterEvening.catalog.map { ($0, nil) }
+        case .classic: entries = DecorKind.catalog.map { ($0, nil) }
+        case .pictures: entries = DecorLibrary.shared.pictures.map { (.picture, $0.id) }
+        }
         let rows = (entries.count + columns - 1) / columns
-        let catalogHeight = CGFloat(rows) * 76
-        let grid = NSView(frame: NSRect(x: 0, y: 0, width: 448, height: catalogHeight))
+        let rowHeight = 126
+        let tilesHeight = CGFloat(rows * rowHeight)
+        catalog.hasVerticalScroller = tilesHeight > catalog.contentSize.height
+        let catalogHeight = max(catalog.contentSize.height, tilesHeight)
+        let grid = NSView(frame: NSRect(x: 0, y: 0, width: 432, height: catalogHeight))
         for (i, entry) in entries.enumerated() {
             let tile = makeTile(entry.0, id: nil, pictureID: entry.1)
-            tile.frame = NSRect(x: (i % columns) * 112, y: (rows - 1 - i / columns) * 76, width: 108, height: 71)
+            tile.frame = NSRect(x: (i % columns) * 146,
+                                y: Int(catalogHeight) - (i / columns + 1) * rowHeight,
+                                width: 138, height: 118)
             grid.addSubview(tile)
+        }
+        if entries.isEmpty {
+            let empty = NSTextField(labelWithString: tr("Перетащи PNG или JPEG сюда", "Drop a PNG or JPEG here"))
+            empty.textColor = WinterPalette.secondary
+            empty.alignment = .center
+            empty.frame = NSRect(x: 0, y: catalogHeight / 2, width: grid.bounds.width, height: 24)
+            grid.addSubview(empty)
         }
         catalog.documentView = grid
         let catalogY = catalogScroll?.contentView.bounds.minY ?? max(0, catalogHeight - catalog.contentSize.height)
@@ -390,25 +452,30 @@ final class DecorStudio {
         catalogScroll = catalog
         content.addSubview(catalog)
 
-        let inspector = NSTextField(labelWithString: selectedKind.title)
+        let pictureTitle = DecorLibrary.shared.pictures.first { $0.id == selectedPicture }?.title
+        let inspector = NSTextField(labelWithString: pictureTitle ?? selectedKind.title)
         if selectedKind.isGarland, selectedID != nil {
             inspector.stringValue += tr(" · Тяни за концы на экране", " · Drag either hook on screen")
         }
         inspector.font = .systemFont(ofSize: 12, weight: .semibold)
-        inspector.frame = NSRect(x: 16, y: 56, width: 464, height: 19)
+        inspector.frame = NSRect(x: 24, y: 70, width: 440, height: 19)
         content.addSubview(inspector)
-        let choices = NSSegmentedControl(labels: DecorStyle.allCases.map(\.title), trackingMode: .selectOne,
+        let styleLabels = DecorStyle.allCases.map { $0 == .classic ? tr("Оригинал", "Original") : $0.title }
+        let choices = NSSegmentedControl(labels: styleLabels, trackingMode: .selectOne,
                                          target: self, action: #selector(changeStyle(_:)))
+        choices.isEnabled = selectedKind != .picture || selectedPicture != nil
         choices.selectedSegment = DecorStyle.allCases.firstIndex(of: selectedStyle) ?? 0
-        choices.frame = NSRect(x: 12, y: 20, width: 464, height: 28)
+        choices.frame = NSRect(x: 24, y: 35, width: 440, height: 28)
         content.addSubview(choices)
 
-        let heading = NSTextField(labelWithString: tr("Расставленные украшения", "Placed decorations"))
-        heading.font = .systemFont(ofSize: 14, weight: .semibold)
-        heading.frame = NSRect(x: 496, y: 547, width: 352, height: 22)
+        let heading = NSTextField(labelWithString: tr("На рабочем столе", "On your desktop"))
+        heading.font = WinterPalette.heading(21)
+        heading.frame = NSRect(x: 512, y: 500, width: 326, height: 28)
         content.addSubview(heading)
-        let scroll = NSScrollView(frame: NSRect(x: 496, y: 16, width: 352, height: 526))
+        let scroll = NSScrollView(frame: NSRect(x: 506, y: 75, width: 336, height: 413))
         scroll.hasVerticalScroller = true
+        scroll.scrollerStyle = .overlay
+        scroll.drawsBackground = false
         let items = DecorStore.shared.items
         let documentHeight = max(scroll.contentSize.height, items.reduce(CGFloat(0)) { $0 + ($1.kind.isGarland ? 104 : 70) })
         let document = NSView(frame: NSRect(x: 0, y: 0, width: 335, height: documentHeight))
@@ -461,7 +528,7 @@ final class DecorStudio {
         }
         if items.isEmpty {
             let empty = NSTextField(labelWithString: tr("Здесь появится всё, что ты расставишь.", "Your placed decorations will appear here."))
-            empty.textColor = .secondaryLabelColor
+            empty.textColor = WinterPalette.secondary
             empty.frame = NSRect(x: 8, y: documentHeight - 30, width: 320, height: 22)
             document.addSubview(empty)
         }
@@ -494,6 +561,23 @@ final class DecorStudio {
         }
     }
 
+    @objc private func changeCollection(_ sender: NSSegmentedControl) {
+        guard let collection = Collection(rawValue: sender.selectedSegment) else { return }
+        self.collection = collection
+        if selectedID == nil {
+            selectedPicture = nil
+            switch collection {
+            case .winterEvening: selectedKind = .eveningLamp
+            case .classic: selectedKind = .pairedHouse
+            case .pictures:
+                selectedKind = .picture
+                selectedPicture = DecorLibrary.shared.pictures.first?.id
+            }
+        }
+        catalogScroll = nil
+        rebuild()
+    }
+
     @objc private func choosePictures() {
         let picker = NSOpenPanel()
         picker.allowedContentTypes = [.png, .jpeg]
@@ -509,7 +593,14 @@ final class DecorStudio {
             do { try DecorLibrary.shared.add(url) }
             catch { failed.append(url.lastPathComponent) }
         }
-        catalogScroll = nil
+        if failed.count < urls.count {
+            collection = .pictures
+            selectedKind = .picture
+            selectedPicture = DecorLibrary.shared.pictures.first?.id
+            selectedID = nil
+            refreshHandles()
+            catalogScroll = nil
+        }
         rebuild()
         if !failed.isEmpty {
             let alert = NSAlert()
@@ -631,6 +722,22 @@ final class DecorStudio {
     }
 }
 
+private final class StudioBackdrop: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSGradient(starting: WinterPalette.background, ending: WinterPalette.gradientEnd)?.draw(in: bounds, angle: -90)
+        for rect in [NSRect(x: 16, y: 93, width: 464, height: 404),
+                     NSRect(x: 496, y: 22, width: 352, height: 475)] {
+            let surface = NSBezierPath(roundedRect: rect, xRadius: 14, yRadius: 14)
+            WinterPalette.panel.setFill()
+            surface.fill()
+            WinterPalette.line.setStroke()
+            surface.stroke()
+        }
+    }
+}
+
 private final class DecorSizeSlider: NSSlider {
     var itemID = UUID()
     weak var valueLabel: NSTextField?
@@ -666,19 +773,23 @@ private final class DecorTile: NSView {
     override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.controlAccentColor.withAlphaComponent(selected ? 0.27 : 0.08).setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 10, yRadius: 10).fill()
+        let card = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 11, yRadius: 11)
+        (selected ? WinterPalette.selection : WinterPalette.card).setFill()
+        card.fill()
+        (selected ? WinterPalette.accent : WinterPalette.line).setStroke()
+        card.stroke()
         let imageRect = compact ? NSRect(x: 5, y: 2, width: 53, height: 44)
-                                : NSRect(x: (bounds.width - 53) / 2, y: 15, width: 53, height: 53)
+                                : NSRect(x: 14, y: 25, width: bounds.width - 28, height: 85)
         let artwork = DecorArtwork.image(kind, self.style, pictureID: pictureID)
         let scale = min(imageRect.width / artwork.size.width, imageRect.height / artwork.size.height)
         let w = artwork.size.width * scale, h = artwork.size.height * scale
         artwork.draw(in: CGRect(x: imageRect.midX - w/2, y: imageRect.midY - h/2, width: w, height: h))
         let style = NSMutableParagraphStyle()
         style.alignment = compact ? .left : .center
+        style.lineBreakMode = .byTruncatingTail
         (caption as NSString).draw(in: compact ? NSRect(x: 65, y: 14, width: 210, height: 18)
-                                                   : NSRect(x: 3, y: 4, width: bounds.width - 6, height: 15),
-                                     withAttributes: [.font: NSFont.systemFont(ofSize: 11),
+                                                   : NSRect(x: 6, y: 7, width: bounds.width - 12, height: 17),
+                                     withAttributes: [.font: NSFont.systemFont(ofSize: 12, weight: .medium),
                                                       .foregroundColor: NSColor.labelColor, .paragraphStyle: style])
     }
 
