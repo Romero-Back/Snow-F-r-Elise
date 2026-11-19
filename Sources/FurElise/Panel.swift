@@ -1,4 +1,3 @@
-import CryptoKit
 import SwiftUI
 
 /// То, что панель показывает, но что не хранится в настройках.
@@ -252,15 +251,6 @@ struct PanelView: View {
 
     // MARK: - Вкладка «Украшения»
 
-    private static func acceptsGiftCode(_ input: String) -> Bool {
-        if let personal = UserDefaults.standard.string(forKey: "privateGiftCode"), !personal.isEmpty {
-            return input == personal
-        }
-        guard let expectedDigest = UserDefaults.standard.string(forKey: "privateGiftCodeDigest") else { return false }
-        let digest = SHA256.hash(data: Data(("FurElise.gift." + input).utf8))
-        return digest.map { String(format: "%02x", $0) }.joined() == expectedDigest
-    }
-
     private var decorCards: some View {
         VStack(spacing: 10) {
             holidayCard
@@ -292,7 +282,7 @@ struct PanelView: View {
                 HStack {
                     SecureField(tr("Код сюрприза", "Surprise code"), text: $state.giftCode)
                     Button(tr("Открыть", "Unlock")) {
-                        s.giftUnlocked = Self.acceptsGiftCode(state.giftCode)
+                        s.giftUnlocked = GiftCode.accepts(state.giftCode)
                         state.giftCodeError = !s.giftUnlocked
                         state.giftCode = ""
                     }
