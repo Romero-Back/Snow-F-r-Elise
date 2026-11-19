@@ -1,7 +1,7 @@
 import AppKit
 import CoreGraphics
 
-struct WinInfo {
+struct WinInfo: Equatable {
     let id: Int
     /// Рамка окна в глобальных координатах Cocoa (начало — левый нижний угол основного экрана).
     let frame: CGRect

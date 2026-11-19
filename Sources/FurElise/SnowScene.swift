@@ -13,22 +13,18 @@ final class SnowScene: SKScene {
     private var balls: [Snowball] = []
     private var heldBall: Snowball?
     private var tractor: Tractor?
-    private var garland: Garland?
-    private var garlandBuilt: GarlandStyle = .off
-    private var garlandBuiltDouble = false
     private var accumulating = true
     private var autoTractorCheckAt: TimeInterval = 0
 
     private let flakeTexture = SnowScene.makeFlakeTexture()
     private static let starTexture = SnowScene.makeStarTexture()
     private static let crystalTextures = (0..<3).map { SnowScene.makeCrystalTexture(seed: $0) }
-    private var fireplace: Fireplace?
     private let cursorBadge = CursorBadge()
     private let ledgeLayer = SKNode()
     private let ballLayer = SKNode()
     private let flakeLayer = SKNode()
     private let tractorLayer = SKNode()
-    private let garlandLayer = SKNode()
+    let holidayDecor = HolidayDecor()
     private let icicles = IcicleLayer()
     private let fireworks = Fireworks()
     private var sleigh: Sleigh?
@@ -38,13 +34,12 @@ final class SnowScene: SKScene {
     private var splats: [Splat] = []
     private let splatLayer = SKNode()
     private var lastWins: [WinInfo] = []
+    private var emberTime: TimeInterval = 0
+    private var crackleTime: TimeInterval = 0
     private var frost: Frost?
-    private var tree: ChristmasTree?
     private var sedan: Sedan?
     /// Рамка Dock в координатах сцены (до его верхнего края), если он на этом экране.
     private var dockLocal: CGRect?
-    private var treeBuilt = ""
-    private var treeShakeCooldown: CGFloat = 0
     private var cursorMovedNow = false
     private var meltAcc: CGFloat = 0
     private var countdownEnd: TimeInterval?
@@ -72,7 +67,6 @@ final class SnowScene: SKScene {
         ballLayer.zPosition = 1
         flakeLayer.zPosition = 2
         tractorLayer.zPosition = 1.5
-        garlandLayer.zPosition = 1.8
         splatLayer.zPosition = 0.9
         birdLayer.zPosition = 1.2
         addChild(splatLayer)
@@ -81,7 +75,7 @@ final class SnowScene: SKScene {
         fireworks.onLaunch = { Sound.shared.play(.whoosh, gain: 0.6) }
         fireworks.onBurst = { Sound.shared.play(.pop) }
         icicles.onBreak = { Sound.shared.play(.tinkle) }
-        icicles.node.zPosition = 1.7
+        icicles.node.zPosition = -0.1
         fireworks.node.zPosition = 0.5
         countdownLabel.zPosition = 3
         countdownLabel.fontSize = 200
@@ -90,9 +84,9 @@ final class SnowScene: SKScene {
         countdownLabel.isHidden = true
         addChild(fireworks.node)
         addChild(icicles.node)
+        addChild(holidayDecor.node)
         addChild(countdownLabel)
         addChild(tractorLayer)
-        addChild(garlandLayer)
         addChild(ledgeLayer)
         addChild(ballLayer)
         addChild(flakeLayer)
@@ -149,13 +143,16 @@ final class SnowScene: SKScene {
     }
 
     func updateWindows(_ wins: [WinInfo]) {
+        let windowsChanged = lastWins != wins
+        syncIcicles(wins)
+        syncSplats(wins)
+        guard windowsChanged else { return }
+        holidayDecor.layoutDirty = true
         lastWins = wins
         dockLocal = wins.first { $0.id == -2 && $0.frame.intersects(screenFrame) }.map {
             CGRect(x: $0.frame.minX - screenFrame.minX, y: $0.frame.minY - screenFrame.minY,
                    width: $0.frame.width, height: $0.frame.height)
         }
-        syncIcicles(wins)
-        syncSplats(wins)
         var seen: Set<Int> = [-1]
         for (idx, w) in wins.enumerated() {
             let top = w.frame.maxY
@@ -205,19 +202,47 @@ final class SnowScene: SKScene {
         stepTractor(dt, currentTime)
         stepSedan(dt)
         syncAccumulation()
-        syncGarland(currentTime)
         stepDecorations(dt)
         stepBirds(dt, currentTime)
         stepSplats(dt)
         stepFrost(dt)
-        stepTree(dt)
-        stepFireplace(dt)
+        holidayDecor.update(t: currentTime, screen: screenFrame, wins: lastWins)
+        stepWorkshop(dt, currentTime)
         cursorBadge.update(dt: dt, tool: Settings.shared.tool, cursor: lastMouse,
                            show: Settings.shared.accumulate && cursorNearSnow && heldBall == nil,
                            speed: hypot(mouseVel.dx, mouseVel.dy))
         stepCountdown(currentTime)
         refreshLedges(currentTime)
         adaptFrameRate(currentTime)
+    }
+
+    private func stepWorkshop(_ dt: CGFloat, _ now: TimeInterval) {
+        if cursorMovedNow, let point = lastMouse, holidayDecor.nudgeTree(at: point, fromRight: mouseVel.dx < 0) {
+            puff(at: point, spread: 5)
+            Sound.shared.play(.crunch, gain: 0.45)
+        }
+        guard !holidayDecor.hearths.isEmpty else { return }
+        if now >= emberTime, let fire = holidayDecor.hearths.randomElement() {
+            emberTime = now + 0.11
+            addParticle(pos: CGPoint(x: fire.midX + .random(in: -8...8), y: fire.minY + fire.height * 0.22),
+                        vel: CGVector(dx: .random(in: -10...10), dy: .random(in: 35...65)),
+                        size: 2, volume: 0, ballistic: false, life: 0.65, tint: .systemOrange)
+        }
+        if now >= crackleTime {
+            crackleTime = now + .random(in: 2...5)
+            Sound.shared.play(.crackle, gain: 0.45)
+        }
+        for fire in holidayDecor.hearths {
+            for ledge in ledges.values where abs(ledge.y - fire.minY) < 32 {
+                let first = max(0, Int((fire.minX - ledge.x0) / colW))
+                let last = min(ledge.n - 1, Int((fire.maxX - ledge.x0) / colW))
+                guard first <= last else { continue }
+                for i in first...last where ledge.h[i] > 0 {
+                    ledge.h[i] = max(0, ledge.h[i] - 3 * dt)
+                    ledge.dirty = true
+                }
+            }
+        }
     }
 
     /// Пока снег просто падает, хватает 30 fps (полноэкранный прозрачный слой дорого композитить).
@@ -598,23 +623,6 @@ final class SnowScene: SKScene {
         heldBall = nil
     }
 
-    private func syncGarland(_ t: TimeInterval) {
-        let style = Settings.shared.garland
-        let double = Settings.shared.garlandDouble
-        if style != garlandBuilt || double != garlandBuiltDouble {
-            garland?.node.removeFromParent()
-            garland = nil
-            if style != .off {
-                let g = Garland(width: size.width, topY: size.height - menuBarInset, style: style, double: double)
-                garlandLayer.addChild(g.node)
-                garland = g
-            }
-            garlandBuilt = style
-            garlandBuiltDouble = double
-        }
-        garland?.update(t: CGFloat(t), mode: Settings.shared.garlandMode)
-    }
-
     // MARK: - Украшения, таяние, Новый год
 
     private func syncIcicles(_ wins: [WinInfo]) {
@@ -759,114 +767,6 @@ final class SnowScene: SKScene {
             .fadeOut(withDuration: 2),
             .removeFromParent(),
         ]))
-    }
-
-    // MARK: - Камин
-
-    private func stepFireplace(_ dt: CGFloat) {
-        let s = Settings.shared
-        guard s.fireplace else {
-            if let f = fireplace { f.node.removeFromParent(); fireplace = nil }
-            return
-        }
-        if fireplace == nil {
-            let f = Fireplace()
-            f.node.zPosition = 0.93
-            addChild(f.node)
-            fireplace = f
-        }
-        guard let f = fireplace else { return }
-
-        // Место: на Dock у выбранного конца или в углу экрана. Если там уже ёлка — встаём рядом.
-        let onDock: CGRect? = {
-            guard s.fireplaceOnDock, let d = dockLocal, d.width > Fireplace.width + 20 else { return nil }
-            return d
-        }()
-        let left = s.fireplaceCorner == .left
-        var shift: CGFloat = 0
-        if let t = tree, s.treeCorner == s.fireplaceCorner,
-           (s.treeOnDock && dockLocal != nil) == (onDock != nil) {
-            shift = t.halfWidth * 2 + 12
-        }
-        let x: CGFloat, y: CGFloat
-        if let d = onDock {
-            x = left ? d.minX + f.halfWidth + 8 + shift : d.maxX - f.halfWidth - 8 - shift
-            y = d.maxY + 1
-        } else {
-            x = left ? 24 + f.halfWidth + shift : size.width - 24 - f.halfWidth - shift
-            y = 2
-        }
-        f.node.position = CGPoint(x: x, y: y)
-        f.update(dt: dt)
-
-        // Искры из топки.
-        f.sparkAcc += dt
-        if f.sparkAcc > 0.09 {
-            f.sparkAcc = 0
-            addParticle(pos: CGPoint(x: x + .random(in: -14...14), y: y + f.fireCenter.y + .random(in: 0...10)),
-                        vel: CGVector(dx: .random(in: -12...12), dy: .random(in: 40...90)),
-                        size: .random(in: 1.5...3), volume: 0, ballistic: false, life: .random(in: 0.5...1.0),
-                        tint: NSColor(calibratedRed: 1, green: .random(in: 0.45...0.8), blue: 0.15, alpha: 1))
-        }
-        // Треск дров.
-        f.crackleAcc += dt
-        if f.crackleAcc > 2.5 {
-            f.crackleAcc = .random(in: 0...1.5)
-            Sound.shared.play(.crackle)
-        }
-        // У камина на полу тепло — снег тает.
-        if onDock == nil, let g = ledges[-1] {
-            let c0 = max(0, Int((x - f.halfWidth - 30 - g.x0) / colW))
-            let c1 = min(g.n - 1, Int((x + f.halfWidth + 30 - g.x0) / colW))
-            if c0 <= c1 {
-                var any = false
-                for c in c0...c1 where g.h[c] > 0 { g.h[c] = max(0, g.h[c] - 3 * dt); any = true }
-                if any { g.dirty = true }
-            }
-        }
-    }
-
-    // MARK: - Ёлка
-
-    private func stepTree(_ dt: CGFloat) {
-        let s = Settings.shared
-        let key = s.tree ? "\(s.treeCorner.rawValue)-\(s.treeSize.rawValue)-\(s.treeLights.rawValue)-\(s.treeGifts)" : ""
-        if key != treeBuilt {
-            tree?.node.removeFromParent()
-            tree = nil
-            if s.tree {
-                let t = ChristmasTree(height: s.treeSize.height, lights: s.treeLights, gifts: s.treeGifts)
-                t.node.zPosition = 0.95
-                addChild(t.node)
-                tree = t
-            }
-            treeBuilt = key
-        }
-        guard let t = tree else { return }
-        // На Dock — у выбранного конца, стоя на его верхнем крае; иначе — в углу экрана.
-        if s.treeOnDock, let d = dockLocal, d.width > t.halfWidth * 2 + 20 {
-            let x = s.treeCorner == .left ? d.minX + t.halfWidth + 8 : d.maxX - t.halfWidth - 8
-            t.node.position = CGPoint(x: x, y: d.maxY + 1)
-        } else {
-            let margin: CGFloat = 24
-            let x = s.treeCorner == .left ? margin + t.halfWidth : size.width - margin - t.halfWidth
-            t.node.position = CGPoint(x: x, y: 2)
-        }
-        t.update(dt: dt, mode: s.garlandMode)
-        // Курсор задел ёлку — качнулась и стряхнула снег.
-        treeShakeCooldown -= dt
-        if cursorMovedNow, treeShakeCooldown <= 0, let m = lastMouse {
-            let local = CGPoint(x: m.x - t.node.position.x, y: m.y - t.node.position.y)
-            if abs(local.x) < t.halfWidth, local.y > 0, local.y < t.height {
-                treeShakeCooldown = 0.6
-                t.nudge(mouseVel.dx > 0 ? -0.6 : 0.6)
-                for _ in 0..<12 {
-                    puff(at: CGPoint(x: t.node.position.x + .random(in: -t.halfWidth...t.halfWidth) * 0.7,
-                                     y: t.node.position.y + .random(in: 0.2...0.9) * t.height), spread: 4)
-                }
-                Sound.shared.play(.crunch, gain: 0.6)
-            }
-        }
     }
 
     // MARK: - Иней
@@ -1096,10 +996,16 @@ final class SnowScene: SKScene {
             car.speed = min(460, car.speed + 520 * dt)
         }
         car.step(dt)
+        let dockLedge = ledges[-2]
+        let onDock = Settings.shared.accumulate && dockLedge?.col(at: car.x) != nil
+        let surface = onDock ? dockLedge : ledges[-1]
+        let targetY = onDock ? (dockLedge?.y ?? 0) : 0
+        car.roadY += (targetY - car.roadY) * min(1, dt * 14)
+        car.node.position.y += car.roadY
 
         // Чистит снег под собой, при дрифте — шире.
         var removed: CGFloat = 0
-        if let g = ledges[-1] {
+        if let g = surface {
             let half: CGFloat = car.phase == .drifting ? 90 : 62
             let c0 = max(0, Int((car.x - half - g.x0) / colW))
             let c1 = min(g.n - 1, Int((car.x + half - g.x0) / colW))
@@ -1115,8 +1021,8 @@ final class SnowScene: SKScene {
             for _ in 0..<count {
                 // Снег из-под колёс летит назад и вверх; при дрифте — во все стороны.
                 let side: CGFloat = drifting ? (Bool.random() ? 1 : -1) : -car.dir
-                addParticle(pos: CGPoint(x: car.rearWheel.x + .random(in: -8...8), y: .random(in: 3...12)),
-                            vel: CGVector(dx: side * .random(in: 80...280), dy: .random(in: 120...330)),
+                addParticle(pos: CGPoint(x: car.rearWheel.x + .random(in: -8...8), y: car.roadY + .random(in: 3...12)),
+                            vel: CGVector(dx: side * .random(in: 80...280), dy: car.roadY + .random(in: 120...330)),
                             size: .random(in: 2.5...5), volume: 0, ballistic: true, life: .random(in: 0.7...1.4))
             }
         }
@@ -1124,13 +1030,13 @@ final class SnowScene: SKScene {
             car.smokeAcc += dt
             if car.smokeAcc > 0.03 {
                 car.smokeAcc = 0
-                addParticle(pos: CGPoint(x: car.rearWheel.x + .random(in: -10...10), y: .random(in: 2...10)),
-                            vel: CGVector(dx: .random(in: -40...40), dy: .random(in: 20...60)),
+                addParticle(pos: CGPoint(x: car.rearWheel.x + .random(in: -10...10), y: car.roadY + .random(in: 2...10)),
+                            vel: CGVector(dx: .random(in: -40...40), dy: car.roadY + .random(in: 20...60)),
                             size: .random(in: 8...16), volume: 0, ballistic: false, life: .random(in: 0.9...1.6),
                             tint: NSColor(calibratedWhite: 0.8, alpha: 1))
             }
         }
-        for b in balls where b.state == .resting && b.supportLedge == -1 && abs(b.pos.x - car.x) < Sedan.halfLength + b.r {
+        for b in balls where b.state == .resting && b.supportLedge == surface?.id && abs(b.pos.x - car.x) < Sedan.halfLength + b.r {
             b.fall(vel: CGVector(dx: car.dir * 320, dy: 260))
         }
         let gone = car.phase != .drifting

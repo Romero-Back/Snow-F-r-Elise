@@ -21,6 +21,7 @@ final class Sedan {
     var facing: CGFloat = 1
     var driftT: CGFloat = 0
     let driftAt: CGFloat
+    var roadY: CGFloat = 0
     var smokeAcc: CGFloat = 0
     static let length: CGFloat = 145
     static let halfLength: CGFloat = 70

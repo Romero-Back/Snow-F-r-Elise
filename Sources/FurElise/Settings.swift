@@ -189,6 +189,10 @@ final class Settings: ObservableObject {
     @Published var autoCleaner: AutoCleaner { didSet { d.set(autoCleaner.rawValue, forKey: "autoCleaner") } }
     @Published var flakeStyle: FlakeStyle { didSet { d.set(flakeStyle.rawValue, forKey: "flakeStyle") } }
     /// Гирлянда в два ряда: крупные лампочки сверху, мелкие снизу.
+    @Published var giftUnlocked: Bool { didSet { d.set(giftUnlocked, forKey: "giftUnlocked") } }
+    @Published var garlandSag: Double { didSet { d.set(garlandSag, forKey: "garlandSag") } }
+    @Published var garlandSpan: Double { didSet { d.set(garlandSpan, forKey: "garlandSpan") } }
+    @Published var garlandWave: Bool { didSet { d.set(garlandWave, forKey: "garlandWave") } }
     @Published var garlandDouble: Bool { didSet { d.set(garlandDouble, forKey: "garlandDouble") } }
     @Published var fireplace: Bool { didSet { d.set(fireplace, forKey: "fireplace") } }
     @Published var fireplaceCorner: TreeCorner { didSet { d.set(fireplaceCorner.rawValue, forKey: "fireplaceCorner") } }
@@ -235,6 +239,10 @@ final class Settings: ObservableObject {
         language = d.string(forKey: "language") ?? "ru"
         autoCleaner = AutoCleaner(rawValue: d.string(forKey: "autoCleaner") ?? "") ?? .tractor
         flakeStyle = FlakeStyle(rawValue: d.string(forKey: "flakeStyle") ?? "") ?? .dots
+        giftUnlocked = d.object(forKey: "giftUnlocked") as? Bool ?? false
+        garlandSag = d.object(forKey: "garlandSag") as? Double ?? 16
+        garlandSpan = d.object(forKey: "garlandSpan") as? Double ?? 120
+        garlandWave = d.object(forKey: "garlandWave") as? Bool ?? false
         garlandDouble = d.object(forKey: "garlandDouble") as? Bool ?? false
         fireplace = d.object(forKey: "fireplace") as? Bool ?? false
         fireplaceCorner = TreeCorner(rawValue: d.string(forKey: "fireplaceCorner") ?? "") ?? .left

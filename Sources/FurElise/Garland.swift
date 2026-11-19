@@ -23,17 +23,40 @@ final class Garland {
     static let glowTexture = makeGlowTexture()
 
     /// double — два ряда: крупные лампочки сверху, ряд мелких пониже, со своим провисом.
-    init(width: CGFloat, topY: CGFloat, style: GarlandStyle, double: Bool = false) {
+    init(width: CGFloat, topY: CGFloat, style: GarlandStyle, double: Bool = false, depth: Double = 16, spacing: Double = 120, wave: Bool = false, curtain: Bool = false) {
+        let topY = wave ? topY - depth : topY
         if double {
-            addRow(width: width, topY: topY, span: 130, sag: 14, perSpan: 4, scale: 1.35, style: style, colorShift: 0)
-            addRow(width: width, topY: topY - 6, span: 95, sag: 30, perSpan: 6, scale: 0.7, style: style, colorShift: 2)
+            addRow(width: width, topY: topY, span: spacing * 1.08, sag: depth * 0.875, perSpan: 4, scale: 1.35, style: style, colorShift: 0, wave: wave)
+            addRow(width: width, topY: topY - (wave ? depth * 0.875 + 12 : 6), span: spacing * 0.79, sag: depth * 1.875, perSpan: 6, scale: 0.7, style: style, colorShift: 2, wave: wave)
         } else {
-            addRow(width: width, topY: topY, span: 120, sag: 16, perSpan: 4, scale: 1, style: style, colorShift: 0)
+            addRow(width: width, topY: topY, span: spacing, sag: depth, perSpan: 4, scale: 1, style: style, colorShift: 0, wave: wave)
+        }
+        if curtain {
+            for i in 0..<12 {
+                let x = width * (CGFloat(i) + 0.5) / 12
+                let phase = (2 * x / width).truncatingRemainder(dividingBy: 1)
+                let y = topY - depth * 4 * phase * (1 - phase)
+                let count = [3, 5, 4, 2][i % 4]
+                let length = CGFloat(count) * 8
+                let wire = SKShapeNode(rectOf: CGSize(width: 1, height: length))
+                wire.fillColor = .darkGray
+                wire.strokeColor = .clear
+                wire.position = CGPoint(x: x, y: y - length / 2)
+                node.addChild(wire)
+                for j in 1...count {
+                    let light = SKShapeNode(circleOfRadius: 1.8)
+                    light.fillColor = Garland.warm
+                    light.strokeColor = .clear
+                    light.glowWidth = 1.5
+                    light.position = CGPoint(x: x, y: y - CGFloat(j) * 8)
+                    node.addChild(light)
+                }
+            }
         }
     }
 
     private func addRow(width: CGFloat, topY: CGFloat, span: CGFloat, sag: CGFloat, perSpan: Int,
-                        scale: CGFloat, style: GarlandStyle, colorShift: Int) {
+                        scale: CGFloat, style: GarlandStyle, colorShift: Int, wave: Bool) {
         let spans = max(1, Int((width / span).rounded()))
         let w = width / CGFloat(spans)
 
@@ -45,11 +68,18 @@ final class Garland {
             let p1 = CGPoint(x: p0.x + w, y: topY)
             // Контрольная точка на 2·sag ниже даёт провис ровно sag в середине пролёта.
             let c = CGPoint(x: (p0.x + p1.x) / 2, y: topY - sag * 2)
-            wire.addQuadCurve(to: p1, control: c)
+            if wave {
+                for j in 1...24 {
+                    let t = CGFloat(j) / 24
+                    wire.addLine(to: CGPoint(x: p0.x + t * w, y: topY - sag * sin(2 * .pi * t)))
+                }
+            } else {
+                wire.addQuadCurve(to: p1, control: c)
+            }
             for k in 1...perSpan {
                 let t = CGFloat(k) / CGFloat(perSpan + 1)
                 let a = (1 - t) * (1 - t), b = 2 * (1 - t) * t, d = t * t
-                points.append(CGPoint(x: a * p0.x + b * c.x + d * p1.x, y: a * p0.y + b * c.y + d * p1.y))
+                points.append(CGPoint(x: a * p0.x + b * c.x + d * p1.x, y: wave ? topY - sag * sin(2 * .pi * t) : a * p0.y + b * c.y + d * p1.y))
             }
         }
         let wireNode = SKShapeNode(path: wire)

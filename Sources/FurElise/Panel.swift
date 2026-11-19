@@ -1,8 +1,11 @@
+import CryptoKit
 import SwiftUI
 
 /// То, что панель показывает, но что не хранится в настройках.
 final class PanelState: ObservableObject {
     enum DockAction { case none, grant, relaunch }
+    @Published var giftCode = ""
+    @Published var giftCodeError = false
     @Published var dockText = ""
     @Published var dockAction: DockAction = .none
     @Published var launchAtLogin = false
@@ -11,6 +14,7 @@ final class PanelState: ObservableObject {
 }
 
 struct PanelActions {
+    var openDecorStudio: () -> Void
     var callTractor: () -> Void
     var clearSnow: () -> Void
     var dockAction: () -> Void
@@ -50,12 +54,15 @@ struct PanelView: View {
                     cursorCard
                     tractorCard
                 case .decor:
-                    garlandCard
-                    treeCard
-                    fireplaceCard
-                    iciclesCard
-                    frostCard
-                    extrasCard
+                    ScrollView {
+                        VStack(spacing: 10) {
+                            holidayCard
+                            iciclesCard
+                            frostCard
+                            extrasCard
+                        }
+                    }
+                    .frame(height: 435)
                 case .more:
                     soundCard
                     musicCard
@@ -248,29 +255,33 @@ struct PanelView: View {
 
     // MARK: - Вкладка «Украшения»
 
-    private var garlandCard: some View {
+    private static func acceptsGiftCode(_ input: String) -> Bool {
+        if let personal = UserDefaults.standard.string(forKey: "privateGiftCode"), !personal.isEmpty {
+            return input == personal
+        }
+        guard let expectedDigest = UserDefaults.standard.string(forKey: "privateGiftCodeDigest") else { return false }
+        let digest = SHA256.hash(data: Data(("FurElise.gift." + input).utf8))
+        return digest.map { String(format: "%02x", $0) }.joined() == expectedDigest
+    }
+
+    private var holidayCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            title(tr("Гирлянда", "Garland"), "sparkles")
-            Picker("", selection: $s.garland) {
-                ForEach(GarlandStyle.allCases, id: \.self) { Text($0.title).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(maxWidth: .infinity)
-            if s.garland != .off {
-                Picker("", selection: $s.garlandDouble) {
-                    Text(tr("Один ряд", "One row")).tag(false)
-                    Text(tr("Два ряда", "Two rows")).tag(true)
+            title(tr("Мастерская украшений", "Decoration studio"), "sparkles")
+            Button(tr("Открыть мастерскую…", "Open decoration studio…"), action: actions.openDecorStudio)
+            if s.giftUnlocked {
+                Button(tr("Закрыть сюрприз", "Lock surprise")) { s.giftUnlocked = false }
+            } else {
+                HStack {
+                    SecureField(tr("Код сюрприза", "Surprise code"), text: $state.giftCode)
+                    Button(tr("Открыть", "Unlock")) {
+                        s.giftUnlocked = Self.acceptsGiftCode(state.giftCode)
+                        state.giftCodeError = !s.giftUnlocked
+                        state.giftCode = ""
+                    }
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(maxWidth: .infinity)
-                Picker("", selection: $s.garlandMode) {
-                    ForEach(GarlandMode.allCases, id: \.self) { Text($0.title).tag($0) }
+                if state.giftCodeError {
+                    Text(tr("Неверный код", "Incorrect code")).foregroundStyle(.red)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(maxWidth: .infinity)
             }
         }
         .card()
@@ -328,76 +339,7 @@ struct PanelView: View {
         .card()
     }
 
-    private var treeCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("🎄").font(.system(size: 15))
-                Text(tr("Ёлка", "Christmas tree")).font(.subheadline.weight(.semibold))
-                Spacer()
-                Toggle("", isOn: $s.tree).toggleStyle(.switch).labelsHidden().controlSize(.small)
-            }
-            if s.tree {
-                HStack {
-                    Text(tr("Угол", "Corner")).font(.caption).foregroundStyle(.secondary).frame(width: 52, alignment: .leading)
-                    Picker("", selection: $s.treeCorner) {
-                        ForEach(TreeCorner.allCases, id: \.self) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(maxWidth: .infinity)
-                }
-                Picker("", selection: $s.treeSize) {
-                    ForEach(TreeSize.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(maxWidth: .infinity)
-                HStack {
-                    Text(tr("Огоньки", "Lights")).font(.caption).foregroundStyle(.secondary).frame(width: 52, alignment: .leading)
-                    Picker("", selection: $s.treeLights) {
-                        ForEach(GarlandStyle.allCases, id: \.self) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(maxWidth: .infinity)
-                }
-                HStack {
-                    Toggle(tr("Подарки", "Gifts"), isOn: $s.treeGifts)
-                    Spacer()
-                    Toggle(tr("Ставить на Dock", "Stand on the Dock"), isOn: $s.treeOnDock)
-                        .help(tr("Если Dock виден — ёлка встанет на его край", "If the Dock is visible, the tree stands on its edge"))
-                }
-                .toggleStyle(.checkbox)
-                .font(.caption)
-            }
-        }
-        .card()
-    }
 
-    private var fireplaceCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("🔥").font(.system(size: 15))
-                Text(tr("Камин", "Fireplace")).font(.subheadline.weight(.semibold))
-                Spacer()
-                Toggle("", isOn: $s.fireplace).toggleStyle(.switch).labelsHidden().controlSize(.small)
-            }
-            if s.fireplace {
-                HStack {
-                    Picker("", selection: $s.fireplaceCorner) {
-                        ForEach(TreeCorner.allCases, id: \.self) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(maxWidth: .infinity)
-                    Toggle(tr("На Dock", "On Dock"), isOn: $s.fireplaceOnDock)
-                        .toggleStyle(.checkbox)
-                        .font(.caption)
-                }
-            }
-        }
-        .card()
-    }
 
     /// Снегири, Дед Мороз и Новый год — одной карточкой, чтобы панель не росла.
     private var extrasCard: some View {
@@ -423,8 +365,6 @@ struct PanelView: View {
         .font(.callout)
         .card()
     }
-
-
 
 
     // MARK: - Вкладка «Ещё»
@@ -483,6 +423,9 @@ struct PanelView: View {
 
     private var systemCard: some View {
         VStack(alignment: .leading, spacing: 8) {
+            Link(destination: URL(string: "https://github.com/Romero-Back/Snow-F-r-Elise/issues/new")!) {
+                Label(tr("Сообщить о проблеме", "Report an issue"), systemImage: "exclamationmark.bubble")
+            }
             HStack(spacing: 6) {
                 Image(systemName: "dock.rectangle").foregroundStyle(.secondary)
                 Text(state.dockText).font(.caption).foregroundStyle(.secondary)
